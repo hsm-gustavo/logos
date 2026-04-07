@@ -324,19 +324,28 @@ a {
   min-height: 64vh;
   border: 1px solid var(--line);
   border-radius: 0.65rem;
-  background: rgba(255, 255, 255, 0.52);
+  background: var(--paper);
   overflow-y: auto;
   padding: 0.8rem;
+}
+
+:root[data-theme='dark'] .editor-wrap-preview {
+  background: rgba(22, 27, 37, 0.95);
 }
 
 .editor-cm .cm-editor {
   min-height: 64vh;
   border: 1px solid var(--line);
   border-radius: 0.65rem;
-  background: rgba(255, 255, 255, 0.52);
+  background: var(--paper);
   color: var(--sea-ink);
   font-family: var(--font-sans);
   font-size: 0.86rem;
+}
+
+:root[data-theme='dark'] .editor-cm .cm-editor {
+  background: rgba(22, 27, 37, 0.95);
+  color: var(--sea-ink);
 }
 
 .editor-cm .cm-editor.cm-readonly {
@@ -469,10 +478,82 @@ a {
   line-height: 1.55;
 }
 
+:root[data-theme='dark'] .prose {
+  color: var(--sea-ink);
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  color: var(--sea-ink);
+  font-weight: 700;
+}
+
+:root[data-theme='dark'] .prose h1,
+:root[data-theme='dark'] .prose h2,
+:root[data-theme='dark'] .prose h3,
+:root[data-theme='dark'] .prose h4,
+:root[data-theme='dark'] .prose h5,
+:root[data-theme='dark'] .prose h6 {
+  color: var(--sea-ink);
+}
+
 .prose pre {
-  background: var(--chip-bg);
-  border: 1px solid var(--line);
+  background: rgba(242, 240, 234, 0.8);
+  border: 1px solid rgba(18, 32, 58, 0.15);
   border-radius: 0.6rem;
+  color: var(--sea-ink);
+  padding: 1rem;
+}
+
+:root[data-theme='dark'] .prose pre {
+  background: rgba(25, 31, 42, 0.98) !important;
+  border-color: rgba(208, 222, 246, 0.3);
+  color: var(--sea-ink) !important;
+  padding: 1rem;
+}
+
+.prose code {
+  color: var(--sea-ink);
+  background: rgba(18, 32, 58, 0.06);
+  border-radius: 0.3rem;
+  padding: 0.15rem 0.35rem;
+}
+
+:root[data-theme='dark'] .prose code {
+  color: #ffd700;
+  background: rgba(208, 222, 246, 0.12);
+  border-radius: 0.3rem;
+  padding: 0.15rem 0.35rem;
+}
+.prose blockquote {
+  border-left: 4px solid var(--line);
+  color: var(--sea-ink-soft);
+}
+
+:root[data-theme='dark'] .prose blockquote {
+  border-left: 4px solid rgba(208, 222, 246, 0.4);
+  color: var(--sea-ink-soft);
+}
+
+.prose strong {
+  color: var(--sea-ink);
+  font-weight: 700;
+}
+
+:root[data-theme='dark'] .prose strong {
+  color: var(--sea-ink);
+}
+
+.prose a {
+  color: var(--accent);
+}
+
+:root[data-theme='dark'] .prose a {
+  color: var(--accent);
 }
 
 .rise-in {
