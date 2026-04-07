@@ -22,6 +22,6 @@ describe('MarkdownPreview', () => {
 
     expect(
       screen.getByRole('link', { name: 'Limits' }).getAttribute('href'),
-    ).toBe('/?note=limits')
+    ).toBe('/?noteTitle=Limits')
   })
 })

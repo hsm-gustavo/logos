@@ -25,26 +25,46 @@ func extractWikiLinks(content string) []string {
 		if len(match) < 2 {
 			continue
 		}
-		slug := slugify(match[1])
-		if slug == "" {
+		target := strings.TrimSpace(match[1])
+		if target == "" {
 			continue
 		}
-		if _, ok := seen[slug]; ok {
+		if _, ok := seen[target]; ok {
 			continue
 		}
-		seen[slug] = struct{}{}
-		out = append(out, slug)
+		seen[target] = struct{}{}
+		out = append(out, target)
 	}
 	return out
 }
 
-func extractTitle(content, fallback string) string {
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "# ") {
-			return strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
+func replaceWikiLinkTargets(content, oldTarget, newTarget string) string {
+	trimmedOld := strings.TrimSpace(oldTarget)
+	trimmedNew := strings.TrimSpace(newTarget)
+	if trimmedOld == "" || trimmedNew == "" || trimmedOld == trimmedNew {
+		return content
+	}
+
+	return wikiLinkPattern.ReplaceAllStringFunc(content, func(raw string) string {
+		match := wikiLinkPattern.FindStringSubmatch(raw)
+		if len(match) < 2 {
+			return raw
 		}
+
+		if strings.TrimSpace(match[1]) == trimmedOld {
+			return "[[" + trimmedNew + "]]"
+		}
+
+		return raw
+	})
+}
+
+func extractTitle(content, fallback string) string {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
+		trimmed := strings.TrimSpace(line)
+		noPref, _ := strings.CutPrefix(trimmed, "# ")
+		return strings.TrimSpace(noPref)
 	}
 	if strings.TrimSpace(fallback) != "" {
 		return strings.TrimSpace(fallback)

@@ -13,11 +13,14 @@ type Note = {
 
 type Search = {
   note?: string
+  noteTitle?: string
 }
 
 export const Route = createFileRoute('/')({
   validateSearch: (search: Record<string, unknown>): Search => ({
     note: typeof search.note === 'string' ? search.note : undefined,
+    noteTitle:
+      typeof search.noteTitle === 'string' ? search.noteTitle : undefined,
   }),
   component: App,
 })
@@ -31,8 +34,8 @@ function App() {
   const navigate = Route.useNavigate()
 
   const selectedNoteId = useMemo(() => {
-    return search.note ? slugify(search.note) : ''
-  }, [search.note])
+    return resolveNoteIDFromSearch(notes, search)
+  }, [notes, search])
 
   useEffect(() => {
     void loadNotes()
@@ -66,7 +69,7 @@ function App() {
       return
     }
 
-    const initialId = selectedNoteId || data[0]?.id
+    const initialId = resolveNoteIDFromSearch(data, search) || data[0]?.id
     if (initialId) {
       await openNote(initialId)
     }
@@ -223,4 +226,22 @@ func greet() string {
       </section>
     </main>
   )
+}
+
+function resolveNoteIDFromSearch(notes: Note[], search: Search): string {
+  const noteID = search.note?.trim()
+  if (noteID) {
+    return noteID
+  }
+
+  const rawTitle = search.noteTitle?.trim()
+  if (!rawTitle) {
+    return ''
+  }
+
+  const title = rawTitle.toLocaleLowerCase()
+  const match = notes.find(
+    (note) => note.title.trim().toLocaleLowerCase() === title,
+  )
+  return match?.id ?? ''
 }

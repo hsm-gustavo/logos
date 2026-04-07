@@ -27,7 +27,7 @@ func NewFileStore(dir string) *FileStore {
 	return &FileStore{dir: dir}
 }
 
-func (s *FileStore) Save(_ context.Context, note Note) error {
+func (s *FileStore) Save(ctx context.Context, note Note) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return err
 	}
@@ -37,8 +37,24 @@ func (s *FileStore) Save(_ context.Context, note Note) error {
 		return errors.New("invalid note id")
 	}
 
+	prevTitle := ""
+	if existing, err := s.Get(ctx, id); err == nil {
+		prevTitle = existing.Title
+	} else if !errors.Is(err, ErrNoteNotFound) {
+		return err
+	}
+
 	path := filepath.Join(s.dir, id+".md")
-	return os.WriteFile(path, []byte(note.Content), 0o644)
+	if err := os.WriteFile(path, []byte(note.Content), 0o644); err != nil {
+		return err
+	}
+
+	newTitle := extractTitle(note.Content, note.Title)
+	if prevTitle == "" || strings.TrimSpace(prevTitle) == strings.TrimSpace(newTitle) {
+		return nil
+	}
+
+	return s.updateBacklinks(prevTitle, newTitle)
 }
 
 func (s *FileStore) Get(_ context.Context, id string) (Note, error) {
@@ -108,4 +124,34 @@ func (s *FileStore) List(ctx context.Context) ([]Note, error) {
 
 func nowUTC() time.Time {
 	return time.Now().UTC()
+}
+
+func (s *FileStore) updateBacklinks(oldTitle, newTitle string) error {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+
+		path := filepath.Join(s.dir, entry.Name())
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+
+		updated := replaceWikiLinkTargets(string(raw), oldTitle, newTitle)
+		if updated == string(raw) {
+			continue
+		}
+
+		if writeErr := os.WriteFile(path, []byte(updated), 0o644); writeErr != nil {
+			return writeErr
+		}
+	}
+
+	return nil
 }

@@ -13,7 +13,7 @@ export function extractWikiLinks(markdown: string): string[] {
   const seen = new Set<string>()
 
   for (const match of matches) {
-    const target = slugify(match[1])
+    const target = match[1].trim()
     if (!target || seen.has(target)) {
       continue
     }
@@ -28,11 +28,10 @@ export function extractWikiLinks(markdown: string): string[] {
 export function toMarkdownLinks(markdown: string): string {
   return markdown.replace(/\[\[([^\]]+)\]\]/g, (_, rawTitle: string) => {
     const label = rawTitle.trim()
-    const slug = slugify(label)
-    if (!slug) {
+    if (!label) {
       return label
     }
 
-    return `[${label}](/?note=${slug})`
+    return `[${label}](/?noteTitle=${encodeURIComponent(label)})`
   })
 }
