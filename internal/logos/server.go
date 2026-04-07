@@ -1,9 +1,11 @@
 package logos
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"strings"
 )
@@ -11,6 +13,7 @@ import (
 type Server struct {
 	mux   *http.ServeMux
 	store Store
+	frontendFS embed.FS
 }
 
 type upsertNoteRequest struct {
@@ -18,10 +21,11 @@ type upsertNoteRequest struct {
 	Content string `json:"content"`
 }
 
-func NewServer(store Store) *Server {
+func NewServer(store Store, frontendFS embed.FS) *Server {
 	s := &Server{
 		mux:   http.NewServeMux(),
 		store: store,
+		frontendFS: frontendFS,
 	}
 
 	s.routes()
@@ -33,6 +37,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/notes", s.handleListNotes)
 	s.mux.HandleFunc("GET /api/notes/{id}", s.handleGetNote)
 	s.mux.HandleFunc("PUT /api/notes/{id}", s.handlePutNote)
+
+	public, _ := fs.Sub(s.frontendFS, "dist")
+	s.mux.Handle("/", http.FileServer(http.FS(public)))
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

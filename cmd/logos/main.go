@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/hsm-gustavo/logos/frontend"
 	"github.com/hsm-gustavo/logos/internal/logos"
 )
 
@@ -15,7 +16,7 @@ func main() {
 	}
 
 	store := logos.NewFileStore(dataDir)
-	server := logos.NewServer(store)
+	server := logos.NewServer(store, frontend.FrontendFS)
 
 	addr := ":8080"
 	log.Printf("Logos backend listening on %s", addr)

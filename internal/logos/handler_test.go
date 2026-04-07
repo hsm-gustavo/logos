@@ -2,6 +2,7 @@ package logos
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,7 @@ func TestAPIFlow(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	server := NewServer(NewFileStore(dir))
+	server := NewServer(NewFileStore(dir), embed.FS{})
 
 	putBody := map[string]string{
 		"title":   "Calculus I",
