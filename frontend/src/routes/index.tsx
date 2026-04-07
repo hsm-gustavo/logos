@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import { autocompletion } from '@codemirror/autocomplete'
+import { markdown } from '@codemirror/lang-markdown'
+import { EditorView } from '@codemirror/view'
 import { createFileRoute } from '@tanstack/react-router'
 import { MarkdownPreview } from '../components/notes/MarkdownPreview'
 import { createNoteID } from '../lib/noteId'
-import {
-  applyWikiSuggestion,
-  findWikiSuggestionContext,
-  searchWikiTitles,
-  type WikiSuggestionContext,
-} from '../lib/wikiAutocomplete'
+import { createDebouncedRunner } from '../lib/autoSave'
+import { createWikiCompletionSource } from '../lib/wikiCompletion'
 
 type Note = {
   id: string
@@ -35,14 +35,22 @@ function App() {
   const [notes, setNotes] = useState<Note[]>([])
   const [activeNote, setActiveNote] = useState<Note | null>(null)
   const [draft, setDraft] = useState('')
+  const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [status, setStatus] = useState('Loading notes...')
-  const [suggestions, setSuggestions] = useState<string[]>([])
-  const [suggestionCtx, setSuggestionCtx] =
-    useState<WikiSuggestionContext | null>(null)
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
-  const editorRef = useRef<HTMLTextAreaElement | null>(null)
+  const autoSaveRunnerRef = useRef(createDebouncedRunner(500))
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
+
+  const editorExtensions = useMemo(() => {
+    const titles = notes.map((note) => note.title)
+    return [
+      markdown(),
+      EditorView.lineWrapping,
+      autocompletion({
+        override: [createWikiCompletionSource(titles)],
+      }),
+    ]
+  }, [notes])
 
   const selectedNoteId = useMemo(() => {
     return resolveNoteIDFromSearch(notes, search)
@@ -59,6 +67,27 @@ function App() {
 
     void openNote(selectedNoteId)
   }, [selectedNoteId, notes.length])
+
+  useEffect(() => {
+    return () => {
+      autoSaveRunnerRef.current.cancel()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeNote) {
+      return
+    }
+
+    if (draft === activeNote.content) {
+      return
+    }
+
+    setIsAutoSaving(true)
+    autoSaveRunnerRef.current.schedule(() => {
+      void persistNote(activeNote.id, activeNote.title, draft, true)
+    })
+  }, [activeNote, draft])
 
   async function loadNotes() {
     const response = await fetch('/api/notes')
@@ -96,9 +125,56 @@ function App() {
     const note = (await response.json()) as Note
     setActiveNote(note)
     setDraft(note.content)
-    setSuggestions([])
-    setSuggestionCtx(null)
     setStatus(`Editing ${note.title}`)
+  }
+
+  async function persistNote(
+    noteID: string,
+    noteTitle: string,
+    content: string,
+    silent: boolean,
+  ) {
+    const response = await fetch(`/api/notes/${noteID}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: noteTitle,
+        content,
+      }),
+    })
+
+    if (!response.ok) {
+      setIsAutoSaving(false)
+      if (!silent) {
+        setStatus('Save failed.')
+      }
+      return false
+    }
+
+    setActiveNote((current) =>
+      current && current.id === noteID ? { ...current, content } : current,
+    )
+    setNotes((current) =>
+      current.map((note) =>
+        note.id === noteID
+          ? {
+              ...note,
+              content,
+              updatedAt: new Date().toISOString(),
+            }
+          : note,
+      ),
+    )
+
+    setIsAutoSaving(false)
+
+    if (!silent) {
+      setStatus('Saved.')
+    } else {
+      setStatus('Auto-saved.')
+    }
+
+    return true
   }
 
   async function saveCurrentNote() {
@@ -106,23 +182,14 @@ function App() {
       return
     }
 
-    const response = await fetch(`/api/notes/${activeNote.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: activeNote.title,
-        content: draft,
-      }),
-    })
-
-    if (!response.ok) {
-      setStatus('Save failed.')
+    autoSaveRunnerRef.current.cancel()
+    const ok = await persistNote(activeNote.id, activeNote.title, draft, false)
+    if (!ok) {
       return
     }
 
     await openNote(activeNote.id)
     await loadNotes()
-    setStatus('Saved.')
   }
 
   async function createNote() {
@@ -177,50 +244,6 @@ func greet() string {
     })
   }
 
-  function refreshSuggestions(value: string, cursor: number) {
-    const context = findWikiSuggestionContext(value, cursor)
-    if (!context) {
-      setSuggestions([])
-      setSuggestionCtx(null)
-      setSelectedSuggestionIndex(0)
-      return
-    }
-
-    const titles = notes.map((note) => note.title)
-    const matches = searchWikiTitles(titles, context.query)
-    if (matches.length === 0) {
-      setSuggestions([])
-      setSuggestionCtx(context)
-      setSelectedSuggestionIndex(0)
-      return
-    }
-
-    setSuggestionCtx(context)
-    setSuggestions(matches)
-    setSelectedSuggestionIndex(0)
-  }
-
-  function applySuggestionSelection(title: string) {
-    if (!suggestionCtx) {
-      return
-    }
-
-    const result = applyWikiSuggestion(draft, suggestionCtx, title)
-    setDraft(result.value)
-    setSuggestions([])
-    setSuggestionCtx(null)
-    setSelectedSuggestionIndex(0)
-
-    requestAnimationFrame(() => {
-      const editor = editorRef.current
-      if (!editor) {
-        return
-      }
-      editor.focus()
-      editor.setSelectionRange(result.cursor, result.cursor)
-    })
-  }
-
   return (
     <main className="page-wrap pb-10 pt-8">
       <section className="panel-grid rise-in">
@@ -260,96 +283,35 @@ func greet() string {
         <section className="glass editor-panel">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="panel-title">Editor</h2>
-            <button
-              className="action-btn"
-              type="button"
-              onClick={saveCurrentNote}
-            >
-              Save
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="status-line m-0">
+                {isAutoSaving ? 'Autosave in 500ms...' : 'Autosave enabled'}
+              </span>
+              <button
+                className="action-btn"
+                type="button"
+                onClick={saveCurrentNote}
+              >
+                Save
+              </button>
+            </div>
           </div>
           <div className="editor-wrap">
-            <textarea
-              ref={editorRef}
-              className="editor-input"
+            <CodeMirror
+              className="editor-cm"
               value={draft}
-              onChange={(event) => {
-                const value = event.target.value
-                const cursor = event.target.selectionStart ?? value.length
+              height="64vh"
+              extensions={editorExtensions}
+              basicSetup={{
+                lineNumbers: false,
+                foldGutter: false,
+                highlightActiveLine: false,
+              }}
+              onChange={(value) => {
                 setDraft(value)
-                refreshSuggestions(value, cursor)
               }}
-              onClick={(event) => {
-                const target = event.target as HTMLTextAreaElement
-                const cursor = target.selectionStart ?? draft.length
-                refreshSuggestions(draft, cursor)
-              }}
-              onKeyUp={(event) => {
-                const target = event.currentTarget
-                const cursor = target.selectionStart ?? draft.length
-                refreshSuggestions(target.value, cursor)
-              }}
-              onKeyDown={(event) => {
-                if (suggestions.length === 0) {
-                  return
-                }
-
-                if (event.key === 'ArrowDown') {
-                  event.preventDefault()
-                  setSelectedSuggestionIndex(
-                    (index) => (index + 1) % suggestions.length,
-                  )
-                  return
-                }
-
-                if (event.key === 'ArrowUp') {
-                  event.preventDefault()
-                  setSelectedSuggestionIndex(
-                    (index) =>
-                      (index - 1 + suggestions.length) % suggestions.length,
-                  )
-                  return
-                }
-
-                if (event.key === 'Enter' || event.key === 'Tab') {
-                  event.preventDefault()
-                  applySuggestionSelection(
-                    suggestions[selectedSuggestionIndex] ?? suggestions[0],
-                  )
-                  return
-                }
-
-                if (event.key === 'Escape') {
-                  setSuggestions([])
-                  setSuggestionCtx(null)
-                  setSelectedSuggestionIndex(0)
-                }
-              }}
-              spellCheck={false}
+              placeholder="Write markdown... Type [[ to link notes"
             />
-
-            {suggestions.length > 0 && (
-              <ul className="wiki-suggest-list" role="listbox">
-                {suggestions.map((title, index) => (
-                  <li key={title}>
-                    <button
-                      type="button"
-                      className={
-                        index === selectedSuggestionIndex
-                          ? 'wiki-suggest-item wiki-suggest-item-active'
-                          : 'wiki-suggest-item'
-                      }
-                      onMouseDown={(event) => {
-                        event.preventDefault()
-                        applySuggestionSelection(title)
-                      }}
-                    >
-                      {title}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         </section>
 
