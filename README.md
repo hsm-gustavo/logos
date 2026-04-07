@@ -9,9 +9,11 @@ A self-hosted, student-focused, Markdown-native note-taking workspace.
 3. Build and run the frontend (`cd frontend && pnpm install && pnpm build && pnpm preview`)
 4. Open `http://localhost:4173` in your browser
 
+or simply run `make` from the repository root to do all of the above, and open `http://localhost:8080` in your browser.
+
 ## Things that are missing / TODO
 
-- [ ] Note deletion
-- [ ] Note renaming
-- [ ] Bundled frontend assets in Go binary
-- [ ] Cloud sync option
+- Note deletion
+- Note renaming
+- Cloud sync option (could be git sync actually)
+- Auto-saving in the editor
