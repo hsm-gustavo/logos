@@ -13,6 +13,12 @@ vi.mock('@uiw/react-codemirror', () => ({
   ),
 }))
 
+vi.mock('../components/notes/MarkdownPreview', () => ({
+  MarkdownPreview: ({ markdown }: { markdown: string }) => (
+    <div data-testid="preview-mock">{markdown}</div>
+  ),
+}))
+
 vi.mock('@tanstack/react-devtools', () => ({
   TanStackDevtools: () => null,
 }))

@@ -8,6 +8,7 @@ import { createNoteID } from '../lib/noteId'
 import { createDebouncedRunner } from '../lib/autoSave'
 import { createWikiCompletionSource } from '../lib/wikiCompletion'
 import { livePreviewStateField } from '../lib/livePreviewExtension'
+import { MarkdownPreview } from '../components/notes/MarkdownPreview'
 
 type Note = {
   id: string
@@ -36,6 +37,7 @@ function App() {
   const [activeNote, setActiveNote] = useState<Note | null>(null)
   const [draft, setDraft] = useState('')
   const [isAutoSaving, setIsAutoSaving] = useState(false)
+  const [isReadOnly, setIsReadOnly] = useState(false)
   const [status, setStatus] = useState('Loading notes...')
   const autoSaveRunnerRef = useRef(createDebouncedRunner(500))
   const search = Route.useSearch()
@@ -76,7 +78,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!activeNote) {
+    if (!activeNote || isReadOnly) {
       return
     }
 
@@ -88,7 +90,7 @@ function App() {
     autoSaveRunnerRef.current.schedule(() => {
       void persistNote(activeNote.id, activeNote.title, draft, true)
     })
-  }, [activeNote, draft])
+  }, [activeNote, draft, isReadOnly])
 
   async function loadNotes() {
     const response = await fetch('/api/notes')
@@ -152,13 +154,26 @@ function App() {
       return false
     }
 
-    setActiveNote((current) =>
-      current && current.id === noteID ? { ...current, content } : current,
-    )
+    // Capture the response to get the updated note (backend may re-extract title from markdown)
+    let updatedNote: Note | null = null
+    try {
+      const contentType = response.headers.get('content-type')
+      if (contentType && contentType.includes('application/json')) {
+        updatedNote = (await response.json()) as Note
+      }
+    } catch {
+      // If response parsing fails, continue with local state
+    }
+
+    setActiveNote((current) => {
+      if (!current || current.id !== noteID) return current
+      return updatedNote || { ...current, content }
+    })
+
     setNotes((current) =>
       current.map((note) =>
         note.id === noteID
-          ? {
+          ? updatedNote || {
               ...note,
               content,
               updatedAt: new Date().toISOString(),
@@ -251,9 +266,11 @@ func greet() string {
         <aside className="glass note-list-panel">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="panel-title">Notes</h2>
-            <button className="action-btn" type="button" onClick={createNote}>
-              New
-            </button>
+            {!isReadOnly && (
+              <button className="action-btn" type="button" onClick={createNote}>
+                New
+              </button>
+            )}
           </div>
           <p className="status-line">{status}</p>
           <ul className="note-list">
@@ -281,39 +298,66 @@ func greet() string {
           </ul>
         </aside>
 
-        <section className="glass editor-panel">
+        <section
+          className={`glass editor-panel ${isReadOnly ? 'editor-panel-readonly' : ''}`}
+        >
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="panel-title">Editor</h2>
             <div className="flex items-center gap-2">
               <span className="status-line m-0">
-                {isAutoSaving ? 'Autosave in 500ms...' : 'Autosave enabled'}
+                {isReadOnly
+                  ? 'Read-only mode'
+                  : isAutoSaving
+                    ? 'Autosave in 500ms...'
+                    : 'Autosave enabled'}
               </span>
+              {!isReadOnly && (
+                <button
+                  className="action-btn"
+                  type="button"
+                  onClick={saveCurrentNote}
+                >
+                  Save
+                </button>
+              )}
               <button
-                className="action-btn"
+                className={`action-btn ${isReadOnly ? 'action-btn-readonly-active' : ''}`}
                 type="button"
-                onClick={saveCurrentNote}
+                title={
+                  isReadOnly ? 'Exit read-only mode' : 'Enter read-only mode'
+                }
+                onClick={() => setIsReadOnly(!isReadOnly)}
               >
-                Save
+                {isReadOnly ? '👁️' : '✎'}
               </button>
             </div>
           </div>
-          <div className="editor-wrap">
-            <CodeMirror
-              className="editor-cm"
-              value={draft}
-              height="64vh"
-              extensions={editorExtensions}
-              basicSetup={{
-                lineNumbers: false,
-                foldGutter: false,
-                highlightActiveLine: false,
-              }}
-              onChange={(value) => {
-                setDraft(value)
-              }}
-              placeholder="Write markdown... Type [[ to link notes"
-            />
-          </div>
+          {isReadOnly ? (
+            <div className="editor-wrap editor-wrap-preview">
+              <MarkdownPreview markdown={draft} />
+            </div>
+          ) : (
+            <div className="editor-wrap">
+              <CodeMirror
+                className="editor-cm"
+                value={draft}
+                height="64vh"
+                extensions={editorExtensions}
+                basicSetup={{
+                  lineNumbers: false,
+                  foldGutter: false,
+                  highlightActiveLine: false,
+                }}
+                onChange={(value) => {
+                  if (!isReadOnly) {
+                    setDraft(value)
+                  }
+                }}
+                placeholder="Write markdown... Type [[ to link notes"
+                readOnly={isReadOnly}
+              />
+            </div>
+          )}
         </section>
       </section>
     </main>

@@ -120,10 +120,21 @@ a {
   gap: 1rem;
 }
 
-.note-list-panel,
+.note-list-panel {
+  padding: 0.9rem;
+  min-height: 72vh;
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .editor-panel {
   padding: 0.9rem;
   min-height: 72vh;
+}
+
+.editor-panel-readonly {
+  background: color-mix(in oklab, var(--paper) 98%, var(--sea-ink-soft) 2%);
 }
 
 .mode-switch {
@@ -190,11 +201,28 @@ a {
   font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
 }
 
 .action-btn:hover {
   border-color: var(--accent);
   background: color-mix(in oklab, var(--accent-soft) 40%, var(--chip-bg));
+}
+
+.action-btn:active {
+  transform: scale(0.98);
+}
+
+.action-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.action-btn-readonly-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .note-list {
@@ -203,6 +231,26 @@ a {
   padding: 0;
   display: grid;
   gap: 0.45rem;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.note-list::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.note-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.note-list::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 0.25rem;
+}
+
+.note-list::-webkit-scrollbar-thumb:hover {
+  background: var(--sea-ink-soft);
 }
 
 .note-item {
@@ -216,10 +264,22 @@ a {
   cursor: pointer;
   display: grid;
   gap: 0.15rem;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .note-item:hover {
   border-color: var(--accent);
+}
+
+.note-item:active {
+  transform: scale(0.98);
+}
+
+.note-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .note-item-active {
@@ -247,7 +307,7 @@ a {
   padding: 0.8rem;
   font-family: var(--font-sans);
   font-size: 0.86rem;
-  line-height: 1.55;
+  line-height: 1.4;
   color: var(--sea-ink);
 }
 
@@ -260,6 +320,15 @@ a {
   position: relative;
 }
 
+.editor-wrap-preview {
+  min-height: 64vh;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.52);
+  overflow-y: auto;
+  padding: 0.8rem;
+}
+
 .editor-cm .cm-editor {
   min-height: 64vh;
   border: 1px solid var(--line);
@@ -270,9 +339,23 @@ a {
   font-size: 0.86rem;
 }
 
+.editor-cm .cm-editor.cm-readonly {
+  background: color-mix(
+    in oklab,
+    rgba(255, 255, 255, 0.52) 96%,
+    var(--sea-ink-soft) 4%
+  );
+  color: var(--sea-ink-soft);
+  cursor: default;
+}
+
 .editor-cm .cm-scroller {
   font-family: var(--font-sans);
-  line-height: 1.55;
+  line-height: 1.4;
+}
+
+.editor-cm .cm-readonly .cm-cursor {
+  display: none;
 }
 
 .editor-cm .cm-content {
@@ -387,7 +470,8 @@ a {
 }
 
 .prose pre {
-  background: #151c27;
+  background: var(--chip-bg);
+  border: 1px solid var(--line);
   border-radius: 0.6rem;
 }
 
