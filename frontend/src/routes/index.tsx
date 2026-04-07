@@ -7,7 +7,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { createNoteID } from '../lib/noteId'
 import { createDebouncedRunner } from '../lib/autoSave'
 import { createWikiCompletionSource } from '../lib/wikiCompletion'
-import { livePreviewExtension } from '../lib/livePreviewExtension'
+import { livePreviewStateField } from '../lib/livePreviewExtension'
 
 type Note = {
   id: string
@@ -46,7 +46,7 @@ function App() {
     return [
       markdown(),
       EditorView.lineWrapping,
-      livePreviewExtension,
+      livePreviewStateField,
       autocompletion({
         override: [createWikiCompletionSource(titles)],
       }),

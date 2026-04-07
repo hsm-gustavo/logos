@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { computeLineModes, renderPreviewLine } from './livePreview'
+import {
+  computeLineModes,
+  renderPreviewBlock,
+  renderPreviewLine,
+} from './livePreview'
 
 describe('live preview line modes', () => {
   it('keeps active line as source and previous line as preview', () => {
@@ -38,5 +42,23 @@ describe('live preview line modes', () => {
 
     expect(rendered.html).toContain('katex')
     expect(rendered.html).toContain('mc')
+  })
+
+  it('renders fenced code blocks as preview blocks', () => {
+    const rendered = renderPreviewBlock(
+      '```go\npackage main\n\nfunc main() {}\n```',
+    )
+
+    expect(rendered.className).toContain('cm-live-preview-block-code')
+    expect(rendered.html).toContain('cm-live-preview-code')
+    expect(rendered.html).toContain('language-go')
+    expect(rendered.html).toContain('hljs-keyword')
+  })
+
+  it('renders display math blocks as preview blocks', () => {
+    const rendered = renderPreviewBlock('$$\nx = y^2\n$$')
+
+    expect(rendered.className).toContain('cm-live-preview-block-math')
+    expect(rendered.html).toContain('katex-display')
   })
 })
