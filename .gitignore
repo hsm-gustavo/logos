@@ -1,2 +1,6 @@
 **/.github/**/*.md
 **/.github/**/*.sh
+data/notes/**/*.md
+!data/notes/
+!data/notes/**/
+!data/notes/welcome-to-logos.md
