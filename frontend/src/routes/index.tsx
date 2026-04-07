@@ -4,10 +4,10 @@ import { autocompletion } from '@codemirror/autocomplete'
 import { markdown } from '@codemirror/lang-markdown'
 import { EditorView } from '@codemirror/view'
 import { createFileRoute } from '@tanstack/react-router'
-import { MarkdownPreview } from '../components/notes/MarkdownPreview'
 import { createNoteID } from '../lib/noteId'
 import { createDebouncedRunner } from '../lib/autoSave'
 import { createWikiCompletionSource } from '../lib/wikiCompletion'
+import { livePreviewExtension } from '../lib/livePreviewExtension'
 
 type Note = {
   id: string
@@ -46,6 +46,7 @@ function App() {
     return [
       markdown(),
       EditorView.lineWrapping,
+      livePreviewExtension,
       autocompletion({
         override: [createWikiCompletionSource(titles)],
       }),
@@ -313,11 +314,6 @@ func greet() string {
               placeholder="Write markdown... Type [[ to link notes"
             />
           </div>
-        </section>
-
-        <section className="glass preview-panel">
-          <h2 className="panel-title mb-3">Preview</h2>
-          <MarkdownPreview markdown={draft} />
         </section>
       </section>
     </main>
