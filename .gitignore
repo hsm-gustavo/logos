@@ -6,3 +6,4 @@ data/notes/**/*.md
 !data/notes/welcome-to-logos.md
 logos
 !**/logos/
+**/*.db

@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { MarkdownPreview } from '../components/notes/MarkdownPreview'
-import { slugify } from '../lib/wikiLinks'
+import { createNoteID } from '../lib/noteId'
+import {
+  applyWikiSuggestion,
+  findWikiSuggestionContext,
+  searchWikiTitles,
+  type WikiSuggestionContext,
+} from '../lib/wikiAutocomplete'
 
 type Note = {
   id: string
@@ -30,6 +36,11 @@ function App() {
   const [activeNote, setActiveNote] = useState<Note | null>(null)
   const [draft, setDraft] = useState('')
   const [status, setStatus] = useState('Loading notes...')
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [suggestionCtx, setSuggestionCtx] =
+    useState<WikiSuggestionContext | null>(null)
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
+  const editorRef = useRef<HTMLTextAreaElement | null>(null)
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
 
@@ -85,6 +96,8 @@ function App() {
     const note = (await response.json()) as Note
     setActiveNote(note)
     setDraft(note.content)
+    setSuggestions([])
+    setSuggestionCtx(null)
     setStatus(`Editing ${note.title}`)
   }
 
@@ -114,7 +127,7 @@ function App() {
 
   async function createNote() {
     const baseName = `note-${notes.length + 1}`
-    const nextID = slugify(baseName)
+    const nextID = createNoteID()
     const content = `# ${baseName}\n\nStart here.`
     await upsertNote(nextID, content)
     await loadNotes()
@@ -161,6 +174,50 @@ func greet() string {
         title: id,
         content,
       }),
+    })
+  }
+
+  function refreshSuggestions(value: string, cursor: number) {
+    const context = findWikiSuggestionContext(value, cursor)
+    if (!context) {
+      setSuggestions([])
+      setSuggestionCtx(null)
+      setSelectedSuggestionIndex(0)
+      return
+    }
+
+    const titles = notes.map((note) => note.title)
+    const matches = searchWikiTitles(titles, context.query)
+    if (matches.length === 0) {
+      setSuggestions([])
+      setSuggestionCtx(context)
+      setSelectedSuggestionIndex(0)
+      return
+    }
+
+    setSuggestionCtx(context)
+    setSuggestions(matches)
+    setSelectedSuggestionIndex(0)
+  }
+
+  function applySuggestionSelection(title: string) {
+    if (!suggestionCtx) {
+      return
+    }
+
+    const result = applyWikiSuggestion(draft, suggestionCtx, title)
+    setDraft(result.value)
+    setSuggestions([])
+    setSuggestionCtx(null)
+    setSelectedSuggestionIndex(0)
+
+    requestAnimationFrame(() => {
+      const editor = editorRef.current
+      if (!editor) {
+        return
+      }
+      editor.focus()
+      editor.setSelectionRange(result.cursor, result.cursor)
     })
   }
 
@@ -211,12 +268,89 @@ func greet() string {
               Save
             </button>
           </div>
-          <textarea
-            className="editor-input"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            spellCheck={false}
-          />
+          <div className="editor-wrap">
+            <textarea
+              ref={editorRef}
+              className="editor-input"
+              value={draft}
+              onChange={(event) => {
+                const value = event.target.value
+                const cursor = event.target.selectionStart ?? value.length
+                setDraft(value)
+                refreshSuggestions(value, cursor)
+              }}
+              onClick={(event) => {
+                const target = event.target as HTMLTextAreaElement
+                const cursor = target.selectionStart ?? draft.length
+                refreshSuggestions(draft, cursor)
+              }}
+              onKeyUp={(event) => {
+                const target = event.currentTarget
+                const cursor = target.selectionStart ?? draft.length
+                refreshSuggestions(target.value, cursor)
+              }}
+              onKeyDown={(event) => {
+                if (suggestions.length === 0) {
+                  return
+                }
+
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setSelectedSuggestionIndex(
+                    (index) => (index + 1) % suggestions.length,
+                  )
+                  return
+                }
+
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setSelectedSuggestionIndex(
+                    (index) =>
+                      (index - 1 + suggestions.length) % suggestions.length,
+                  )
+                  return
+                }
+
+                if (event.key === 'Enter' || event.key === 'Tab') {
+                  event.preventDefault()
+                  applySuggestionSelection(
+                    suggestions[selectedSuggestionIndex] ?? suggestions[0],
+                  )
+                  return
+                }
+
+                if (event.key === 'Escape') {
+                  setSuggestions([])
+                  setSuggestionCtx(null)
+                  setSelectedSuggestionIndex(0)
+                }
+              }}
+              spellCheck={false}
+            />
+
+            {suggestions.length > 0 && (
+              <ul className="wiki-suggest-list" role="listbox">
+                {suggestions.map((title, index) => (
+                  <li key={title}>
+                    <button
+                      type="button"
+                      className={
+                        index === selectedSuggestionIndex
+                          ? 'wiki-suggest-item wiki-suggest-item-active'
+                          : 'wiki-suggest-item'
+                      }
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        applySuggestionSelection(title)
+                      }}
+                    >
+                      {title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
 
         <section className="glass preview-panel">

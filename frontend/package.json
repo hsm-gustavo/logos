@@ -20,6 +20,7 @@
     "@tanstack/react-router": "latest",
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/router-plugin": "^1.132.0",
+    "fuse.js": "^7.3.0",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.45",
     "lucide-react": "^0.545.0",
@@ -30,6 +31,7 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "sqids": "^0.3.0",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
