@@ -252,4 +252,121 @@ describe('index route autosave', () => {
     await screen.findByText('About Logos')
     expect(screen.queryByTestId('workspace-sidebar')).toBeNull()
   })
+
+  it('exports read-only preview to PDF via print dialog', async () => {
+    const note = {
+      id: 'n1',
+      title: 'Note 1',
+      content: '# Note 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([note])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(note)
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const printSpy = vi.fn()
+    const closeSpy = vi.fn()
+    const focusSpy = vi.fn()
+    const popupDocument =
+      document.implementation.createHTMLDocument('pdf-export')
+    const documentCloseSpy = vi.spyOn(popupDocument, 'close')
+    const openSpy = vi.fn().mockReturnValue({
+      document: popupDocument,
+      print: printSpy,
+      close: closeSpy,
+      focus: focusSpy,
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      addEventListener: vi.fn(),
+    })
+
+    vi.stubGlobal('open', openSpy)
+
+    const router = getRouter()
+    await router.navigate({ to: '/' })
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText('Note 1')
+
+    fireEvent.click(screen.getByRole('button', { name: '✎' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }))
+
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalled()
+      expect(documentCloseSpy).toHaveBeenCalled()
+      expect(printSpy).toHaveBeenCalled()
+      expect(popupDocument.title).toBe('Note 1')
+    })
+  })
+
+  it('falls back to current-tab print when popup is blocked', async () => {
+    const note = {
+      id: 'n1',
+      title: 'Note 1',
+      content: '# Note 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([note])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(note)
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const openSpy = vi.fn().mockReturnValue(null)
+    const printSpy = vi.fn()
+
+    vi.stubGlobal('open', openSpy)
+    vi.stubGlobal('print', printSpy)
+
+    const router = getRouter()
+    await router.navigate({ to: '/' })
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText('Note 1')
+
+    fireEvent.click(screen.getByRole('button', { name: '✎' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }))
+
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalled()
+      expect(printSpy).toHaveBeenCalled()
+      expect(
+        screen.getByText('Popup blocked. Opened print dialog in current tab.'),
+      ).toBeTruthy()
+    })
+  })
 })
