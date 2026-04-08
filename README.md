@@ -22,5 +22,4 @@ or simply run `make` from the repository root to do all of the above, and open `
 - Graph View
 - Folders
 - Outline View (like a summary of headings in a side panel)
-- Make notes hotbar into a sidebar
 - Add pinning of notes
