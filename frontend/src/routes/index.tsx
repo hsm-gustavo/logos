@@ -10,6 +10,7 @@ import { createWikiCompletionSource } from '../lib/wikiCompletion'
 import { livePreviewStateField } from '../lib/livePreviewExtension'
 import { MarkdownPreview } from '../components/notes/MarkdownPreview'
 import { useUIStore } from '../lib/uiStore'
+import { useReactToPrint } from 'react-to-print'
 
 type Note = {
   id: string
@@ -50,6 +51,28 @@ function App() {
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
+
+  const printPreview = useReactToPrint({
+    contentRef: previewContainerRef,
+    documentTitle: activeNote?.title?.trim() || 'Note',
+    pageStyle: `
+      @page {
+        margin: 36px;
+      }
+
+      html, body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      body {
+        margin: 0;
+      }
+    `,
+    onPrintError: () => {
+      setStatus('Could not open print dialog.')
+    },
+  })
 
   const editorExtensions = useMemo(() => {
     const titles = notes.map((note) => note.title)
@@ -273,159 +296,8 @@ function App() {
       return
     }
 
-    const printInCurrentTab = () => {
-      const existingRoot = document.getElementById('pdf-export-inline-root')
-      const existingStyle = document.getElementById('pdf-export-inline-style')
-      existingRoot?.remove()
-      existingStyle?.remove()
-
-      const style = document.createElement('style')
-      style.id = 'pdf-export-inline-style'
-      style.textContent = `
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
-
-          #pdf-export-inline-root,
-          #pdf-export-inline-root * {
-            visibility: visible !important;
-          }
-
-          #pdf-export-inline-root {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 36px;
-          }
-        }
-      `
-
-      const root = document.createElement('main')
-      root.id = 'pdf-export-inline-root'
-      root.className = 'prose prose-slate dark:prose-invert max-w-none'
-      root.innerHTML = previewRoot.innerHTML
-
-      document.head.append(style)
-      document.body.append(root)
-
-      const cleanup = () => {
-        root.remove()
-        style.remove()
-      }
-
-      window.addEventListener('afterprint', cleanup, { once: true })
-      window.print()
-      setTimeout(cleanup, 1500)
-    }
-
-    const popup = window.open('', '_blank', 'noopener,noreferrer')
-    if (!popup) {
-      printInCurrentTab()
-      setStatus('Popup blocked. Opened print dialog in current tab.')
-      return
-    }
-
-    const rootClassName = document.documentElement.className
-    const title = activeNote?.title?.trim() || 'Note'
-    const exportDocument = popup.document
-
-    exportDocument.documentElement.className = rootClassName
-    exportDocument.head.replaceChildren()
-    exportDocument.body.replaceChildren()
-
-    const charsetMeta = exportDocument.createElement('meta')
-    charsetMeta.setAttribute('charset', 'utf-8')
-
-    const viewportMeta = exportDocument.createElement('meta')
-    viewportMeta.setAttribute('name', 'viewport')
-    viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1')
-
-    const titleElement = exportDocument.createElement('title')
-    titleElement.textContent = title
-
-    exportDocument.head.append(charsetMeta, viewportMeta, titleElement)
-
-    for (const node of document.querySelectorAll(
-      'link[rel="stylesheet"], style',
-    )) {
-      exportDocument.head.append(node.cloneNode(true))
-    }
-
-    const exportStyle = exportDocument.createElement('style')
-    exportStyle.textContent = `
-      body {
-        margin: 36px;
-      }
-
-      .pdf-export-actions {
-        display: flex;
-        justify-content: flex-end;
-        margin-bottom: 16px;
-      }
-
-      .pdf-export-btn {
-        border: 1px solid #999;
-        border-radius: 8px;
-        background: #fff;
-        font: 600 14px/1.2 system-ui, sans-serif;
-        padding: 8px 12px;
-        cursor: pointer;
-      }
-
-      .pdf-export-wrap {
-        max-width: 960px;
-        margin: 0 auto;
-      }
-
-      @media print {
-        .pdf-export-actions {
-          display: none;
-        }
-      }
-    `
-    exportDocument.head.append(exportStyle)
-
-    const actions = exportDocument.createElement('div')
-    actions.className = 'pdf-export-actions'
-
-    const printButton = exportDocument.createElement('button')
-    printButton.className = 'pdf-export-btn'
-    printButton.type = 'button'
-    printButton.textContent = 'Print / Save as PDF'
-    printButton.addEventListener('click', () => {
-      popup.focus()
-      popup.print()
-    })
-    actions.append(printButton)
-    exportDocument.body.append(actions)
-
-    const main = exportDocument.createElement('main')
-    main.className = 'pdf-export-wrap'
-    main.innerHTML = previewRoot.innerHTML
-    exportDocument.body.append(main)
-
-    exportDocument.close()
-
-    // Try immediate print while still in the user's click gesture.
-    popup.focus()
-    popup.print()
-
-    // Fallback: try again after next paint if the browser ignored the first call.
-    const runPrint = () => {
-      popup.focus()
-      popup.print()
-    }
-    if (typeof popup.requestAnimationFrame === 'function') {
-      popup.requestAnimationFrame(runPrint)
-    } else {
-      setTimeout(runPrint, 120)
-    }
-
-    setStatus(
-      'Export opened. If print does not start, click Print / Save as PDF in the new tab.',
-    )
+    setStatus('Print dialog opened. Choose Save as PDF.')
+    printPreview()
   }
 
   async function createNote() {
@@ -511,7 +383,7 @@ func greet() string {
                   type="button"
                   onClick={exportPreviewToPDF}
                 >
-                  Export PDF
+                  Print / Save as PDF
                 </button>
               )}
               <button
