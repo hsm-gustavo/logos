@@ -8,9 +8,9 @@ Core principles:
 
 - Notes are first-class Markdown files.
 - Internal links use wiki syntax: [[target-note]].
-- Rich study notes should support images, external links, code blocks with syntax highlighting, and math formulas rendered with KaTeX.
+- Study notes should support images, external links, code blocks with syntax highlighting, and math formulas rendered with KaTeX.
 - Everything stays in English. Do not introduce i18n.
-- The frontend uses a monospaced visual identity.
+- New UI should preserve the monospaced visual identity.
 
 ## Agents
 
@@ -76,10 +76,11 @@ Current frontend behavior:
 - The header includes workspace navigation, an About page, and a theme toggle.
 - Left panel shows the note list.
 - Right panel is the Markdown editor.
+- The workspace route should stay thin; move shared logic into `frontend/src/lib/` and UI into `frontend/src/components/`.
 - The editor supports wiki-style autocompletion, autosave, and a read-only preview mode.
+- Read-only preview is loaded lazily and uses `react-markdown`, `remark-gfm`, `remark-math`, `rehype-katex`, and `rehype-highlight`.
 - A new note button creates a fresh note and opens it in the workspace.
 - If the workspace is empty, the app seeds a starter note automatically.
-- Preview uses react-markdown, remark-gfm, remark-math, rehype-katex, and rehype-highlight.
 - Internal links like [[Some Note]] resolve to /?note=some-note.
 
 ## Setup
@@ -116,6 +117,7 @@ Development workflow:
 - Keep copy and UI labels in English.
 - Keep typography monospaced in new UI work unless product direction changes.
 - Do not skip tests for behavior changes.
+- Avoid adding non-route logic under `frontend/src/routes/`, because TanStack Router scans that directory.
 
 ## Tools
 
