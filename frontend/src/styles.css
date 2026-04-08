@@ -68,7 +68,7 @@ a {
 }
 
 .page-wrap {
-  width: min(1320px, calc(100% - 2rem));
+  width: calc(744px + 0.95rem * 2);
   margin-inline: auto;
 }
 
@@ -230,7 +230,6 @@ a {
 }
 
 .status-line {
-  margin: 0 0 0.9rem;
   font-size: 0.78rem;
   color: var(--sea-ink-soft);
 }
@@ -260,10 +259,6 @@ a {
 .action-btn:hover {
   border-color: var(--accent);
   background: color-mix(in oklab, var(--accent-soft) 40%, var(--chip-bg));
-}
-
-.action-btn:active {
-  transform: scale(0.98);
 }
 
 .action-btn:focus-visible {

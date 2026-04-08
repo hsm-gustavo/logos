@@ -11,6 +11,10 @@ import { livePreviewStateField } from '../lib/livePreviewExtension'
 import { MarkdownPreview } from '../components/notes/MarkdownPreview'
 import { useUIStore } from '../lib/uiStore'
 import { useReactToPrint } from 'react-to-print'
+import { IoSaveOutline } from 'react-icons/io5'
+import { GoBook } from 'react-icons/go'
+import { AiOutlineEdit } from 'react-icons/ai'
+import { MdOutlinePrint } from 'react-icons/md'
 
 type Note = {
   id: string
@@ -361,12 +365,17 @@ func greet() string {
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="panel-title">Editor</h2>
             <div className="flex items-center gap-2">
-              <span className="status-line m-0">
-                {isReadOnly
-                  ? 'Read-only mode'
-                  : isAutoSaving
-                    ? 'Autosave in 500ms...'
-                    : 'Autosave enabled'}
+              <span className="status-line m-0 inline-flex items-center gap-1">
+                {isReadOnly ? (
+                  'Read-only mode'
+                ) : isAutoSaving ? (
+                  <>
+                    <span className="inline-block w-3 h-3 rounded-full border-t border-(--chip-line) animate-spin" />
+                    Autosave in 500ms...
+                  </>
+                ) : (
+                  'Autosave enabled'
+                )}
               </span>
               {!isReadOnly && (
                 <button
@@ -374,7 +383,7 @@ func greet() string {
                   type="button"
                   onClick={saveCurrentNote}
                 >
-                  Save
+                  <IoSaveOutline /> Save
                 </button>
               )}
               {isReadOnly && (
@@ -383,7 +392,7 @@ func greet() string {
                   type="button"
                   onClick={exportPreviewToPDF}
                 >
-                  Print / Save as PDF
+                  <MdOutlinePrint /> Print / Save as PDF
                 </button>
               )}
               <button
@@ -394,7 +403,8 @@ func greet() string {
                 }
                 onClick={() => setIsReadOnly(!isReadOnly)}
               >
-                {isReadOnly ? '👁️' : '✎'}
+                {isReadOnly ? <AiOutlineEdit /> : <GoBook />}
+                {isReadOnly ? 'Edit' : 'Read'}
               </button>
             </div>
           </div>
@@ -411,6 +421,7 @@ func greet() string {
                 className="editor-cm"
                 value={draft}
                 height="64vh"
+                width="744px"
                 extensions={editorExtensions}
                 basicSetup={{
                   lineNumbers: false,
