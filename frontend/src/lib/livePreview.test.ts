@@ -61,4 +61,17 @@ describe('live preview line modes', () => {
     expect(rendered.className).toContain('cm-live-preview-block-math')
     expect(rendered.html).toContain('katex-display')
   })
+
+  it('renders markdown tables as preview blocks', () => {
+    const rendered = renderPreviewBlock(
+      ['| Name | Score |', '| --- | ---: |', '| Ana | 10 |'].join('\n'),
+    )
+
+    expect(rendered.className).toContain('cm-live-preview-block-table')
+    expect(rendered.html).toContain('<table')
+    expect(rendered.html).toContain('<thead>')
+    expect(rendered.html).toContain('<tbody>')
+    expect(rendered.html).toContain('Ana')
+    expect(rendered.html).toContain('Score')
+  })
 })

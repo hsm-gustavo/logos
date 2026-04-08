@@ -16,7 +16,7 @@ export type PreviewBlockRender = {
 export type PreviewBlockSpan = {
   fromLine: number
   toLine: number
-  kind: 'code' | 'math'
+  kind: 'code' | 'math' | 'table'
   content: string
   language?: string
 }
@@ -26,6 +26,7 @@ export function computeLineModes(
   activeLineNumber: number,
 ): LineMode[] {
   const lines = markdown.split('\n')
+  const tableLineNumbers = collectTableLineNumbers(lines)
   const modes: LineMode[] = []
   let insideFence = false
 
@@ -40,6 +41,7 @@ export function computeLineModes(
     if (
       isFence ||
       insideFence ||
+      tableLineNumbers.has(lineNumber) ||
       lineNumber === activeLineNumber ||
       trimmed === ''
     ) {
@@ -118,6 +120,24 @@ export function collectPreviewBlocks(
         content,
       })
       index = closingIndex
+      continue
+    }
+
+    const tableBlock = detectTableBlock(lines, index)
+    if (tableBlock) {
+      if (
+        activeLineNumber >= tableBlock.fromLine &&
+        activeLineNumber <= tableBlock.toLine
+      ) {
+        index = tableBlock.toLine - 1
+        continue
+      }
+
+      blocks.push({
+        ...tableBlock,
+        kind: 'table',
+      })
+      index = tableBlock.toLine - 1
     }
   }
 
@@ -128,6 +148,13 @@ export function renderPreviewBlock(block: string): PreviewBlockRender {
   const lines = block.split('\n')
   const firstLine = lines[0]?.trim() ?? ''
   const lastLine = lines[lines.length - 1]?.trim() ?? ''
+
+  if (isMarkdownTableBlock(lines)) {
+    return {
+      html: renderMarkdownTable(block),
+      className: 'cm-live-preview-block cm-live-preview-block-table',
+    }
+  }
 
   if (firstLine.startsWith('```') && lastLine.startsWith('```')) {
     const language = firstLine.slice(3).trim()
@@ -219,6 +246,181 @@ function renderInlineHTML(input: string): string {
   return escaped.replace(/@@MATH(\d+)@@/g, (_, index: string) => {
     return mathTokens[Number(index)] ?? ''
   })
+}
+
+function renderMarkdownTable(markdown: string): string {
+  const lines = markdown
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+
+  if (!isMarkdownTableBlock(lines)) {
+    return ''
+  }
+
+  const headerCells = splitTableCells(lines[0] ?? '')
+  const alignments = parseTableAlignments(lines[1] ?? '', headerCells.length)
+  const bodyLines = lines.slice(2)
+
+  const header = headerCells
+    .map((cell, index) => {
+      return `<th${getAlignmentStyleAttr(alignments[index])}>${renderInlineHTML(cell)}</th>`
+    })
+    .join('')
+
+  const body = bodyLines
+    .map((line) => {
+      const cells = normalizeTableCells(
+        splitTableCells(line),
+        headerCells.length,
+      )
+      const cols = cells
+        .map((cell, index) => {
+          return `<td${getAlignmentStyleAttr(alignments[index])}>${renderInlineHTML(cell)}</td>`
+        })
+        .join('')
+      return `<tr>${cols}</tr>`
+    })
+    .join('')
+
+  return `<div class="cm-live-preview-table-wrap"><table class="cm-live-preview-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table></div>`
+}
+
+function isMarkdownTableBlock(lines: string[]): boolean {
+  if (lines.length < 2) {
+    return false
+  }
+
+  const headerLine = (lines[0] ?? '').trim()
+  const separatorLine = (lines[1] ?? '').trim()
+
+  return isTableHeaderLine(headerLine) && isTableSeparatorLine(separatorLine)
+}
+
+function collectTableLineNumbers(lines: string[]): Set<number> {
+  const tableLines = new Set<number>()
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const tableBlock = detectTableBlock(lines, index)
+    if (!tableBlock) {
+      continue
+    }
+
+    for (
+      let lineNumber = tableBlock.fromLine;
+      lineNumber <= tableBlock.toLine;
+      lineNumber += 1
+    ) {
+      tableLines.add(lineNumber)
+    }
+
+    index = tableBlock.toLine - 1
+  }
+
+  return tableLines
+}
+
+function detectTableBlock(
+  lines: string[],
+  startIndex: number,
+): {
+  fromLine: number
+  toLine: number
+  content: string
+} | null {
+  const headerLine = (lines[startIndex] ?? '').trim()
+  const separatorLine = (lines[startIndex + 1] ?? '').trim()
+
+  if (!isTableHeaderLine(headerLine) || !isTableSeparatorLine(separatorLine)) {
+    return null
+  }
+
+  let endIndexExclusive = startIndex + 2
+  while (endIndexExclusive < lines.length) {
+    const line = (lines[endIndexExclusive] ?? '').trim()
+    if (!isTableDataLine(line)) {
+      break
+    }
+    endIndexExclusive += 1
+  }
+
+  return {
+    fromLine: startIndex + 1,
+    toLine: endIndexExclusive,
+    content: lines.slice(startIndex, endIndexExclusive).join('\n'),
+  }
+}
+
+function isTableHeaderLine(line: string): boolean {
+  return line.includes('|') && splitTableCells(line).length > 1
+}
+
+function isTableDataLine(line: string): boolean {
+  return (
+    line.length > 0 && line.includes('|') && splitTableCells(line).length > 1
+  )
+}
+
+function isTableSeparatorLine(line: string): boolean {
+  if (!line.includes('|')) {
+    return false
+  }
+
+  const cells = splitTableCells(line)
+  if (cells.length === 0) {
+    return false
+  }
+
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function splitTableCells(line: string): string[] {
+  const normalized = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return normalized.split('|').map((cell) => cell.trim())
+}
+
+function normalizeTableCells(cells: string[], width: number): string[] {
+  const normalized = cells.slice(0, width)
+  while (normalized.length < width) {
+    normalized.push('')
+  }
+  return normalized
+}
+
+function parseTableAlignments(
+  separatorLine: string,
+  width: number,
+): Array<'left' | 'center' | 'right' | null> {
+  const cells = normalizeTableCells(splitTableCells(separatorLine), width)
+
+  return cells.map((cell) => {
+    const startsWithColon = cell.startsWith(':')
+    const endsWithColon = cell.endsWith(':')
+
+    if (startsWithColon && endsWithColon) {
+      return 'center'
+    }
+
+    if (endsWithColon) {
+      return 'right'
+    }
+
+    if (startsWithColon) {
+      return 'left'
+    }
+
+    return null
+  })
+}
+
+function getAlignmentStyleAttr(
+  alignment: 'left' | 'center' | 'right' | null | undefined,
+): string {
+  if (!alignment) {
+    return ''
+  }
+
+  return ` style="text-align:${alignment}"`
 }
 
 function escapeHTML(input: string): string {

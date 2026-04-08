@@ -302,7 +302,7 @@ describe('index route autosave', () => {
     await screen.findByText('Note 1')
 
     fireEvent.click(screen.getByRole('button', { name: '✎' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Export PDF' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Print / Save as PDF' }))
 
     await waitFor(() => {
       expect(reactToPrintMocks.useReactToPrint).toHaveBeenCalled()

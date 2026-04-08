@@ -3,6 +3,25 @@ import { describe, expect, it } from 'vitest'
 import { MarkdownPreview } from './MarkdownPreview'
 
 describe('MarkdownPreview', () => {
+  it('renders markdown tables', () => {
+    render(
+      <MarkdownPreview
+        markdown={[
+          '| Name | Score |',
+          '| --- | ---: |',
+          '| Ana | 10 |',
+          '| Bob | 8 |',
+        ].join('\n')}
+      />,
+    )
+
+    const table = screen.getByRole('table')
+    expect(table).not.toBeNull()
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeTruthy()
+    expect(screen.getByRole('cell', { name: 'Ana' })).toBeTruthy()
+    expect(screen.getByRole('cell', { name: '10' })).toBeTruthy()
+  })
+
   it('renders math formulas', () => {
     render(<MarkdownPreview markdown={'Inline math: $x^2$'} />)
 

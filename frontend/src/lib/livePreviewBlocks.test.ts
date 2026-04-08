@@ -2,6 +2,42 @@ import { describe, expect, it } from 'vitest'
 import { collectPreviewBlocks, computeLineModes } from './livePreview'
 
 describe('livePreview blocks', () => {
+  it('collects markdown table blocks when cursor is outside the table', () => {
+    const markdown = [
+      '# Note',
+      '| Name | Score |',
+      '| --- | ---: |',
+      '| Ana | 10 |',
+      '| Bob | 8 |',
+      'after',
+    ].join('\n')
+
+    const blocks = collectPreviewBlocks(markdown, 1)
+
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toMatchObject({
+      fromLine: 2,
+      toLine: 5,
+      kind: 'table',
+    })
+  })
+
+  it('does not collect table block when active cursor line is inside table', () => {
+    const markdown = [
+      '| Name | Score |',
+      '| --- | ---: |',
+      '| Ana | 10 |',
+      '| Bob | 8 |',
+      'tail',
+    ].join('\n')
+
+    const outside = collectPreviewBlocks(markdown, 5)
+    const inside = collectPreviewBlocks(markdown, 3)
+
+    expect(outside).toHaveLength(1)
+    expect(inside).toHaveLength(0)
+  })
+
   it('collects fenced code and display math blocks when cursor is outside', () => {
     const markdown = [
       '# Note',

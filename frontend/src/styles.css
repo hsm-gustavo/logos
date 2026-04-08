@@ -485,6 +485,27 @@ a {
   padding: 0.15rem 0;
 }
 
+.editor-cm .cm-live-preview-table-wrap {
+  overflow-x: auto;
+}
+
+.editor-cm .cm-live-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.editor-cm .cm-live-preview-table th,
+.editor-cm .cm-live-preview-table td {
+  border: 1px solid var(--line);
+  padding: 0.35rem 0.45rem;
+}
+
+.editor-cm .cm-live-preview-table th {
+  font-weight: 700;
+  background: color-mix(in oklab, var(--accent-soft) 35%, var(--paper));
+}
+
 .wiki-suggest-list {
   list-style: none;
   margin: 0;
