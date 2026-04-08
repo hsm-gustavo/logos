@@ -16,7 +16,6 @@ or simply run `make` from the repository root to do all of the above, and open `
 - Note deletion
 - Git diffing and history
 - Image support
-- PDF Generation
 - Note Search
 - Slash commands (maybe)
 - Graph View
