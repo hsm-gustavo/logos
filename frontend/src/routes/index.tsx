@@ -9,6 +9,7 @@ import { createDebouncedRunner } from '../lib/autoSave'
 import { createWikiCompletionSource } from '../lib/wikiCompletion'
 import { livePreviewStateField } from '../lib/livePreviewExtension'
 import { MarkdownPreview } from '../components/notes/MarkdownPreview'
+import { useUIStore } from '../lib/uiStore'
 
 type Note = {
   id: string
@@ -38,7 +39,13 @@ function App() {
   const [draft, setDraft] = useState('')
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [isReadOnly, setIsReadOnly] = useState(false)
-  const [status, setStatus] = useState('Loading notes...')
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const status = useUIStore((state) => state.status)
+  const setStatus = useUIStore((state) => state.setStatus)
+  const setWorkspaceSidebar = useUIStore((state) => state.setWorkspaceSidebar)
+  const clearWorkspaceSidebar = useUIStore(
+    (state) => state.clearWorkspaceSidebar,
+  )
   const autoSaveRunnerRef = useRef(createDebouncedRunner(500))
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -58,6 +65,16 @@ function App() {
   const selectedNoteId = useMemo(() => {
     return resolveNoteIDFromSearch(notes, search)
   }, [notes, search])
+
+  const sidebarNotes = useMemo(
+    () =>
+      notes.map((note) => ({
+        id: note.id,
+        title: note.title,
+        linksCount: note.links.length,
+      })),
+    [notes],
+  )
 
   useEffect(() => {
     void loadNotes()
@@ -91,6 +108,42 @@ function App() {
       void persistNote(activeNote.id, activeNote.title, draft, true)
     })
   }, [activeNote, draft, isReadOnly])
+
+  useEffect(() => {
+    setWorkspaceSidebar({
+      notes: sidebarNotes,
+      selectedId: activeNote?.id,
+      collapsed: isSidebarCollapsed,
+      canCreate: !isReadOnly,
+      statusText: status,
+      onCreate: () => {
+        void createNote()
+      },
+      onSelect: (noteId: string) => {
+        void (async () => {
+          await navigate({ search: { note: noteId } })
+          await openNote(noteId)
+        })()
+      },
+      onToggleCollapse: () => setIsSidebarCollapsed((current) => !current),
+      onSearch: () => setStatus('Search is coming soon.'),
+      onConfig: () => setStatus('Sidebar settings are coming soon.'),
+    })
+
+    return () => {
+      clearWorkspaceSidebar()
+    }
+  }, [
+    activeNote?.id,
+    clearWorkspaceSidebar,
+    isReadOnly,
+    isSidebarCollapsed,
+    navigate,
+    setStatus,
+    setWorkspaceSidebar,
+    sidebarNotes,
+    status,
+  ])
 
   async function loadNotes() {
     const response = await fetch('/api/notes')
@@ -261,43 +314,8 @@ func greet() string {
   }
 
   return (
-    <main className="page-wrap pb-10 pt-8">
-      <section className="panel-grid rise-in">
-        <aside className="glass note-list-panel">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <h2 className="panel-title">Notes</h2>
-            {!isReadOnly && (
-              <button className="action-btn" type="button" onClick={createNote}>
-                New
-              </button>
-            )}
-          </div>
-          <p className="status-line">{status}</p>
-          <ul className="note-list">
-            {notes.map((note) => (
-              <li key={note.id}>
-                <button
-                  type="button"
-                  className={
-                    note.id === activeNote?.id
-                      ? 'note-item note-item-active'
-                      : 'note-item'
-                  }
-                  onClick={async () => {
-                    await navigate({ search: { note: note.id } })
-                    await openNote(note.id)
-                  }}
-                >
-                  <span className="note-item-title">{note.title}</span>
-                  <span className="note-item-meta">
-                    {note.links.length} links
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-
+    <section className="rise-in" data-testid="workspace-editor-shell">
+      <section className="page-wrap">
         <section
           className={`glass editor-panel ${isReadOnly ? 'editor-panel-readonly' : ''}`}
         >
@@ -360,7 +378,7 @@ func greet() string {
           )}
         </section>
       </section>
-    </main>
+    </section>
   )
 }
 

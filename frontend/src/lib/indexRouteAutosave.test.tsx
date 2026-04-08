@@ -1,6 +1,12 @@
 import { RouterProvider } from '@tanstack/react-router'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getRouter } from '../router'
 
 vi.mock('@uiw/react-codemirror', () => ({
@@ -35,6 +41,11 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe('index route autosave', () => {
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
   beforeEach(() => {
     vi.useRealTimers()
 
@@ -118,7 +129,127 @@ describe('index route autosave', () => {
       },
       { timeout: 2500 },
     )
+  })
 
-    vi.unstubAllGlobals()
+  it('collapses the notes sidebar and keeps Search/Config actions visible', async () => {
+    const note = {
+      id: 'n1',
+      title: 'Note 1',
+      content: '# Note 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([note])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(note)
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText('Note 1')
+
+    const collapseButton = await screen.findByTitle('Collapse notes sidebar')
+    fireEvent.click(collapseButton)
+
+    expect(screen.queryByText('Note 1')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Search notes' })).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'Sidebar settings' }),
+    ).toBeTruthy()
+  })
+
+  it('renders sidebar outside editor shell and updates status from sidebar actions', async () => {
+    const note = {
+      id: 'n1',
+      title: 'Note 1',
+      content: '# Note 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([note])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(note)
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText('Note 1')
+
+    const sidebar = screen.getByTestId('workspace-sidebar')
+    const editorShell = screen.getByTestId('workspace-editor-shell')
+    expect(editorShell.contains(sidebar)).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search notes' }))
+    expect(screen.getByText('Search is coming soon.')).toBeTruthy()
+  })
+
+  it('hides workspace sidebar on About route', async () => {
+    const note = {
+      id: 'n1',
+      title: 'Note 1',
+      content: '# Note 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([note])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(note)
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByTestId('workspace-sidebar')
+    await router.navigate({ to: '/about' })
+
+    await screen.findByText('About Logos')
+    expect(screen.queryByTestId('workspace-sidebar')).toBeNull()
   })
 })
