@@ -6,10 +6,18 @@ import (
 	"time"
 )
 
+type Folder struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 type Note struct {
 	ID        string    `json:"id"`
 	Title     string    `json:"title"`
 	Content   string    `json:"content"`
+	State     string    `json:"state"`
+	FolderID  *string   `json:"folderId"`
 	Links     []string  `json:"links"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	Path      string    `json:"path,omitempty"`

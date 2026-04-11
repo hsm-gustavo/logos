@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -37,11 +38,32 @@ CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   content TEXT NOT NULL,
+  folder_id TEXT,
+  state TEXT NOT NULL DEFAULT 'active',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS folders (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 `
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`ALTER TABLE notes ADD COLUMN folder_id TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+
+	_, err = s.db.Exec(`ALTER TABLE notes ADD COLUMN state TEXT NOT NULL DEFAULT 'active'`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+	return nil
 }
 
 func (s *SQLiteStore) Save(ctx context.Context, note Note) error {
@@ -75,18 +97,49 @@ func (s *SQLiteStore) Save(ctx context.Context, note Note) error {
 		return scanErr
 	}
 
+	state := strings.TrimSpace(note.State)
+	if state == "" {
+		var existingState string
+		row := tx.QueryRowContext(ctx, `SELECT state FROM notes WHERE id = ?`, id)
+		if scanErr := row.Scan(&existingState); scanErr == nil {
+			state = strings.TrimSpace(existingState)
+		} else if !errors.Is(scanErr, sql.ErrNoRows) {
+			return scanErr
+		}
+	}
+	if state == "" {
+		state = "active"
+	}
+	folderID := note.FolderID
+	if folderID == nil {
+		var existingFolderID sql.NullString
+		row := tx.QueryRowContext(ctx, `SELECT folder_id FROM notes WHERE id = ?`, id)
+		if scanErr := row.Scan(&existingFolderID); scanErr == nil && existingFolderID.Valid {
+			value := strings.TrimSpace(existingFolderID.String)
+			if value != "" {
+				folderID = &value
+			}
+		} else if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+			return scanErr
+		}
+	}
+
 	now := nowUTC().Format(time.RFC3339)
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO notes (id, title, content, updated_at)
-VALUES (?, ?, ?, ?)
+		`INSERT INTO notes (id, title, content, folder_id, state, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
   title = excluded.title,
   content = excluded.content,
+  folder_id = excluded.folder_id,
+  state = excluded.state,
   updated_at = excluded.updated_at`,
 		id,
 		newTitle,
 		note.Content,
+		folderID,
+		state,
 		now,
 	)
 	if err != nil {
@@ -161,13 +214,14 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (Note, error) {
 
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, title, content, updated_at FROM notes WHERE id = ?`,
+		`SELECT id, title, content, folder_id, state, updated_at FROM notes WHERE id = ?`,
 		safeID,
 	)
 
 	var note Note
+	var folderID sql.NullString
 	var updatedAtRaw string
-	if err := row.Scan(&note.ID, &note.Title, &note.Content, &updatedAtRaw); err != nil {
+	if err := row.Scan(&note.ID, &note.Title, &note.Content, &folderID, &note.State, &updatedAtRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Note{}, ErrNoteNotFound
 		}
@@ -181,13 +235,17 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (Note, error) {
 
 	note.UpdatedAt = updatedAt.UTC()
 	note.Links = extractWikiLinks(note.Content)
+	if folderID.Valid && strings.TrimSpace(folderID.String) != "" {
+		value := strings.TrimSpace(folderID.String)
+		note.FolderID = &value
+	}
 	return note, nil
 }
 
 func (s *SQLiteStore) List(ctx context.Context) ([]Note, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, title, content, updated_at FROM notes ORDER BY id ASC`,
+		`SELECT id, title, content, folder_id, state, updated_at FROM notes ORDER BY id ASC`,
 	)
 	if err != nil {
 		return nil, err
@@ -197,8 +255,9 @@ func (s *SQLiteStore) List(ctx context.Context) ([]Note, error) {
 	notes := make([]Note, 0)
 	for rows.Next() {
 		var n Note
+		var folderID sql.NullString
 		var updatedAtRaw string
-		if err := rows.Scan(&n.ID, &n.Title, &n.Content, &updatedAtRaw); err != nil {
+		if err := rows.Scan(&n.ID, &n.Title, &n.Content, &folderID, &n.State, &updatedAtRaw); err != nil {
 			return nil, err
 		}
 
@@ -209,6 +268,10 @@ func (s *SQLiteStore) List(ctx context.Context) ([]Note, error) {
 
 		n.UpdatedAt = updatedAt.UTC()
 		n.Links = extractWikiLinks(n.Content)
+		if folderID.Valid && strings.TrimSpace(folderID.String) != "" {
+			value := strings.TrimSpace(folderID.String)
+			n.FolderID = &value
+		}
 		notes = append(notes, n)
 	}
 
@@ -217,4 +280,145 @@ func (s *SQLiteStore) List(ctx context.Context) ([]Note, error) {
 	}
 
 	return notes, nil
+}
+
+func (s *SQLiteStore) Search(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	notes, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return rankNotesForQuery(notes, query, limit), nil
+}
+
+func (s *SQLiteStore) SaveFolder(ctx context.Context, folder Folder) error {
+	id := slugify(folder.ID)
+	if id == "" {
+		id = slugify(folder.Name)
+	}
+	if id == "" {
+		return errors.New("invalid folder id")
+	}
+
+	name := strings.TrimSpace(folder.Name)
+	if name == "" {
+		return errors.New("folder name is required")
+	}
+
+	_, err := s.db.ExecContext(
+		ctx,
+		`INSERT INTO folders (id, name, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  updated_at = excluded.updated_at`,
+		id,
+		name,
+		nowUTC().Format(time.RFC3339),
+	)
+	return err
+}
+
+func (s *SQLiteStore) GetFolder(ctx context.Context, id string) (Folder, error) {
+	safeID := slugify(id)
+	if safeID == "" {
+		return Folder{}, ErrFolderNotFound
+	}
+
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, updated_at FROM folders WHERE id = ?`, safeID)
+	var folder Folder
+	var updatedAtRaw string
+	if err := row.Scan(&folder.ID, &folder.Name, &updatedAtRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Folder{}, ErrFolderNotFound
+		}
+		return Folder{}, err
+	}
+
+	updatedAt, err := time.Parse(time.RFC3339, updatedAtRaw)
+	if err != nil {
+		return Folder{}, err
+	}
+
+	folder.UpdatedAt = updatedAt.UTC()
+	return folder, nil
+}
+
+func (s *SQLiteStore) ListFolders(ctx context.Context) ([]Folder, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, updated_at FROM folders ORDER BY name ASC, id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	folders := make([]Folder, 0)
+	for rows.Next() {
+		var folder Folder
+		var updatedAtRaw string
+		if err := rows.Scan(&folder.ID, &folder.Name, &updatedAtRaw); err != nil {
+			return nil, err
+		}
+
+		updatedAt, err := time.Parse(time.RFC3339, updatedAtRaw)
+		if err != nil {
+			return nil, err
+		}
+
+		folder.UpdatedAt = updatedAt.UTC()
+		folders = append(folders, folder)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	sort.Slice(folders, func(i, j int) bool {
+		if strings.EqualFold(folders[i].Name, folders[j].Name) {
+			return folders[i].ID < folders[j].ID
+		}
+		return strings.ToLower(folders[i].Name) < strings.ToLower(folders[j].Name)
+	})
+
+	return folders, nil
+}
+
+func (s *SQLiteStore) DeleteFolder(ctx context.Context, id string) error {
+	safeID := slugify(id)
+	if safeID == "" {
+		return ErrFolderNotFound
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM folders WHERE id = ?`, safeID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrFolderNotFound
+	}
+
+	_, err = tx.ExecContext(ctx, `UPDATE notes SET folder_id = NULL, updated_at = ? WHERE folder_id = ?`, nowUTC().Format(time.RFC3339), safeID)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

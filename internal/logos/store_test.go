@@ -116,3 +116,114 @@ func TestFileStoreSaveUpdatesBacklinksOnTitleRename(t *testing.T) {
 		t.Fatalf("old backlink should be removed, got content: %q", gotRef.Content)
 	}
 }
+
+func TestFileStoreSearchRanksTitleBeforeContent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	ctx := context.Background()
+
+	if err := store.Save(ctx, Note{ID: "calculus", Content: "# Calculus\n\nLimits and derivatives."}); err != nil {
+		t.Fatalf("save calculus note: %v", err)
+	}
+
+	if err := store.Save(ctx, Note{ID: "physics", Content: "# Physics\n\nThis note references calculus in the content."}); err != nil {
+		t.Fatalf("save physics note: %v", err)
+	}
+
+	results, err := store.Search(ctx, "calc", 20)
+	if err != nil {
+		t.Fatalf("search notes: %v", err)
+	}
+
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+
+	if results[0].Note.ID != "calculus" {
+		t.Fatalf("expected title match first, got %q", results[0].Note.ID)
+	}
+}
+
+func TestFileStorePersistsNoteStateAndRestore(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	ctx := context.Background()
+
+	if err := store.Save(ctx, Note{ID: "archivable", Title: "Archivable", Content: "# Archivable", State: "archived"}); err != nil {
+		t.Fatalf("save archived note: %v", err)
+	}
+
+	got, err := store.Get(ctx, "archivable")
+	if err != nil {
+		t.Fatalf("get archived note: %v", err)
+	}
+
+	if got.State != "archived" {
+		t.Fatalf("state mismatch after archive: got %q want %q", got.State, "archived")
+	}
+
+	if err := store.Save(ctx, Note{ID: "archivable", Title: "Archivable", Content: "# Archivable", State: "active"}); err != nil {
+		t.Fatalf("save restored note: %v", err)
+	}
+
+	restored, err := store.Get(ctx, "archivable")
+	if err != nil {
+		t.Fatalf("get restored note: %v", err)
+	}
+
+	if restored.State != "active" {
+		t.Fatalf("state mismatch after restore: got %q want %q", restored.State, "active")
+	}
+}
+
+func TestFileStoreFolderCRUDAndOrphaning(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	ctx := context.Background()
+
+	folder := Folder{ID: "math", Name: "Math"}
+	if err := store.SaveFolder(ctx, folder); err != nil {
+		t.Fatalf("save folder: %v", err)
+	}
+
+	gotFolder, err := store.GetFolder(ctx, "math")
+	if err != nil {
+		t.Fatalf("get folder: %v", err)
+	}
+
+	if gotFolder.ID != "math" || gotFolder.Name != "Math" {
+		t.Fatalf("folder mismatch: got %#v", gotFolder)
+	}
+
+	if err := store.Save(ctx, Note{ID: "algebra-1", Title: "Algebra 1", Content: "# Algebra 1", FolderID: &folder.ID}); err != nil {
+		t.Fatalf("save note with folder: %v", err)
+	}
+
+	if err := store.DeleteFolder(ctx, "math"); err != nil {
+		t.Fatalf("delete folder: %v", err)
+	}
+
+	orphaned, err := store.Get(ctx, "algebra-1")
+	if err != nil {
+		t.Fatalf("get orphaned note: %v", err)
+	}
+
+	if orphaned.FolderID != nil {
+		t.Fatalf("expected orphaned note folder to be nil, got %#v", orphaned.FolderID)
+	}
+
+	folders, err := store.ListFolders(ctx)
+	if err != nil {
+		t.Fatalf("list folders: %v", err)
+	}
+
+	if len(folders) != 0 {
+		t.Fatalf("expected folder list empty, got %#v", folders)
+	}
+}
