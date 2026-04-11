@@ -3,11 +3,18 @@ import type { Extension } from '@codemirror/state'
 import { autocompletion } from '@codemirror/autocomplete'
 import { markdown } from '@codemirror/lang-markdown'
 import { EditorView } from '@codemirror/view'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useReactToPrint } from 'react-to-print'
 import { createDebouncedRunner } from './autoSave'
 import { createNoteID } from './noteId'
 import { createWikiCompletionSource } from './wikiCompletion'
 import { livePreviewStateField } from './livePreviewExtension'
+import {
+  foldersListQueryOptions,
+  noteByIdQueryOptions,
+  notesListQueryOptions,
+  searchNotesQueryOptions,
+} from './notesQueries'
 import { useUIStore } from './uiStore'
 
 export type WorkspaceSearchResult = {
@@ -25,6 +32,14 @@ export type WorkspaceNote = {
   title: string
   content: string
   links: string[]
+  folderId?: string
+  state?: string
+  updatedAt: string
+}
+
+type WorkspaceFolder = {
+  id: string
+  name: string
   updatedAt: string
 }
 
@@ -66,25 +81,41 @@ export function useWorkspaceRoute({
   search,
   navigate,
 }: UseWorkspaceRouteArgs): WorkspaceRouteState {
-  const [notes, setNotes] = useState<WorkspaceNote[]>([])
   const [activeNote, setActiveNote] = useState<WorkspaceNote | null>(null)
   const [draft, setDraft] = useState('')
   const [isAutoSaving, setIsAutoSaving] = useState(false)
   const [isReadOnly, setIsReadOnly] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const status = useUIStore((state) => state.status)
   const setStatus = useUIStore((state) => state.setStatus)
   const setWorkspaceSidebar = useUIStore((state) => state.setWorkspaceSidebar)
   const clearWorkspaceSidebar = useUIStore(
     (state) => state.clearWorkspaceSidebar,
   )
+  const sidebarSectionsExpanded = useUIStore(
+    (state) => state.sidebarSectionsExpanded,
+  )
+  const toggleSidebarSectionExpanded = useUIStore(
+    (state) => state.toggleSidebarSectionExpanded,
+  )
   const workspaceSearch = useUIStore((state) => state.workspaceSearch)
   const setWorkspaceSearch = useUIStore((state) => state.setWorkspaceSearch)
   const clearWorkspaceSearch = useUIStore((state) => state.clearWorkspaceSearch)
+  const queryClient = useQueryClient()
+  const notesQuery = useQuery(notesListQueryOptions())
+  const foldersQuery = useQuery(foldersListQueryOptions())
   const autoSaveRunnerRef = useRef(createDebouncedRunner(500))
-  const searchDebounceRef = useRef<number | null>(null)
-  const searchAbortRef = useRef<AbortController | null>(null)
+  const hasSeededWorkspaceRef = useRef(false)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
+
+  const notes = notesQuery.data ?? []
+  const folders = (foldersQuery.data ?? []) as WorkspaceFolder[]
+
+  const searchQuery = useQuery({
+    ...searchNotesQueryOptions(debouncedSearchQuery),
+    enabled: workspaceSearch.isOpen && debouncedSearchQuery.trim() !== '',
+  })
 
   const printPreview = useReactToPrint({
     contentRef: previewContainerRef,
@@ -121,22 +152,89 @@ export function useWorkspaceRoute({
   }, [notes])
 
   const selectedNoteId = useMemo(() => {
-    return resolveNoteIDFromSearch(notes, search)
+    return resolveNoteIDFromSearch(notes, search) || notes[0]?.id || ''
   }, [notes, search])
 
-  const sidebarNotes = useMemo(
-    () =>
-      notes.map((note) => ({
+  const sidebarSections = useMemo(() => {
+    const activeNotes = notes.filter((note) => note.state !== 'archived')
+    const archivedNotes = notes.filter((note) => note.state === 'archived')
+
+    const folderSections = folders.map((folder) => {
+      const sectionID = `folder-${folder.id}`
+      const grouped = activeNotes
+        .filter((note) => note.folderId === folder.id)
+        .map((note) => ({
+          id: note.id,
+          title: note.title,
+          linksCount: note.links.length,
+        }))
+
+      return {
+        id: sectionID,
+        label: folder.name,
+        kind: 'folder' as const,
+        expanded: sidebarSectionsExpanded[sectionID] ?? true,
+        notes: grouped,
+      }
+    })
+
+    const unfiledSectionID = 'unfiled'
+    const unfiledSection = {
+      id: unfiledSectionID,
+      label: 'Unfiled',
+      kind: 'unfiled' as const,
+      expanded: sidebarSectionsExpanded[unfiledSectionID] ?? true,
+      notes: activeNotes
+        .filter((note) => !note.folderId)
+        .map((note) => ({
+          id: note.id,
+          title: note.title,
+          linksCount: note.links.length,
+        })),
+    }
+
+    const archivedSectionID = 'archived'
+    const archivedSection = {
+      id: archivedSectionID,
+      label: 'Archived',
+      kind: 'archived' as const,
+      expanded: sidebarSectionsExpanded[archivedSectionID] ?? false,
+      notes: archivedNotes.map((note) => ({
         id: note.id,
         title: note.title,
         linksCount: note.links.length,
       })),
-    [notes],
-  )
+    }
+
+    return [...folderSections, unfiledSection, archivedSection]
+  }, [folders, notes, sidebarSectionsExpanded])
 
   useEffect(() => {
-    void loadNotes()
-  }, [])
+    if (notesQuery.isError) {
+      setStatus('Backend unavailable. Start Go API on :8080.')
+    }
+  }, [notesQuery.isError, setStatus])
+
+  useEffect(() => {
+    if (foldersQuery.isError) {
+      setStatus('Could not load folders.')
+    }
+  }, [foldersQuery.isError, setStatus])
+
+  useEffect(() => {
+    if (workspaceSearch.query.trim() === '') {
+      setDebouncedSearchQuery('')
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(workspaceSearch.query.trim())
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [workspaceSearch.query])
 
   useEffect(() => {
     if (!selectedNoteId || notes.length === 0) {
@@ -147,98 +245,57 @@ export function useWorkspaceRoute({
   }, [selectedNoteId, notes.length])
 
   useEffect(() => {
+    if (
+      notesQuery.isLoading ||
+      notes.length > 0 ||
+      hasSeededWorkspaceRef.current
+    ) {
+      return
+    }
+
+    hasSeededWorkspaceRef.current = true
+    void (async () => {
+      const seed = await createStarterNote()
+      setActiveNote(seed)
+      setDraft(seed.content)
+      setStatus('Created your first note. Start writing.')
+      await queryClient.invalidateQueries({ queryKey: ['notes'] })
+      await navigate({ search: { note: seed.id } })
+    })()
+  }, [navigate, notes.length, notesQuery.isLoading, queryClient, setStatus])
+
+  useEffect(() => {
     return () => {
       autoSaveRunnerRef.current.cancel()
-      if (searchDebounceRef.current) {
-        window.clearTimeout(searchDebounceRef.current)
-      }
-      searchAbortRef.current?.abort()
       clearWorkspaceSearch()
     }
   }, [clearWorkspaceSearch])
 
   useEffect(() => {
-    const trimmedQuery = workspaceSearch.query.trim()
-
-    if (!workspaceSearch.isOpen) {
-      return
-    }
-
-    if (trimmedQuery === '') {
+    if (!workspaceSearch.isOpen || workspaceSearch.query.trim() === '') {
       setWorkspaceSearch((current) => ({
         ...current,
         results: [],
         error: null,
         isLoading: false,
       }))
-      searchAbortRef.current?.abort()
-      if (searchDebounceRef.current) {
-        window.clearTimeout(searchDebounceRef.current)
-        searchDebounceRef.current = null
-      }
       return
     }
 
-    if (searchDebounceRef.current) {
-      window.clearTimeout(searchDebounceRef.current)
-    }
-
-    searchDebounceRef.current = window.setTimeout(() => {
-      searchAbortRef.current?.abort()
-      const controller = new AbortController()
-      searchAbortRef.current = controller
-      setWorkspaceSearch((current) => ({
-        ...current,
-        isLoading: true,
-        error: null,
-      }))
-
-      void (async () => {
-        try {
-          const response = await fetch(
-            `/api/search?q=${encodeURIComponent(trimmedQuery)}`,
-            { signal: controller.signal },
-          )
-
-          if (!response.ok) {
-            setWorkspaceSearch((current) => ({
-              ...current,
-              error: 'Could not search notes.',
-              results: [],
-            }))
-            return
-          }
-
-          const data = (await response.json()) as WorkspaceSearchResult[]
-          setWorkspaceSearch((current) => ({
-            ...current,
-            results: data,
-          }))
-        } catch (error) {
-          if (error instanceof Error && error.name === 'AbortError') {
-            return
-          }
-          setWorkspaceSearch((current) => ({
-            ...current,
-            error: 'Could not search notes.',
-            results: [],
-          }))
-        } finally {
-          setWorkspaceSearch((current) => ({
-            ...current,
-            isLoading: false,
-          }))
-        }
-      })()
-    }, 300)
-
-    return () => {
-      if (searchDebounceRef.current) {
-        window.clearTimeout(searchDebounceRef.current)
-        searchDebounceRef.current = null
-      }
-    }
-  }, [setWorkspaceSearch, workspaceSearch.isOpen, workspaceSearch.query])
+    setWorkspaceSearch((current) => ({
+      ...current,
+      isLoading: searchQuery.isFetching,
+      error: searchQuery.isError ? 'Could not search notes.' : null,
+      results: (searchQuery.data ?? []) as WorkspaceSearchResult[],
+    }))
+  }, [
+    searchQuery.data,
+    searchQuery.isError,
+    searchQuery.isFetching,
+    setWorkspaceSearch,
+    workspaceSearch.isOpen,
+    workspaceSearch.query,
+  ])
 
   useEffect(() => {
     if (!activeNote || isReadOnly) {
@@ -257,19 +314,29 @@ export function useWorkspaceRoute({
 
   useEffect(() => {
     setWorkspaceSidebar({
-      notes: sidebarNotes,
+      sections: sidebarSections,
       selectedId: activeNote?.id,
       collapsed: isSidebarCollapsed,
       canCreate: !isReadOnly,
+      canCreateFolder: !isReadOnly,
       statusText: status,
       onCreate: () => {
         void createNote()
+      },
+      onCreateFolder: () => {
+        void createFolder()
       },
       onSelect: (noteId: string) => {
         void (async () => {
           await navigate({ search: { note: noteId } })
           await openNote(noteId)
         })()
+      },
+      onMoveNoteToFolder: (noteId: string, folderId: string) => {
+        void moveNoteToFolder(noteId, folderId)
+      },
+      onToggleSection: (sectionId: string) => {
+        toggleSidebarSectionExpanded(sectionId)
       },
       onToggleCollapse: () => setIsSidebarCollapsed((current) => !current),
       onSearch: () => {
@@ -293,47 +360,22 @@ export function useWorkspaceRoute({
     navigate,
     setStatus,
     setWorkspaceSidebar,
-    sidebarNotes,
+    sidebarSections,
     status,
+    toggleSidebarSectionExpanded,
   ])
 
-  async function loadNotes() {
-    const response = await fetch('/api/notes')
-    if (!response.ok) {
-      setStatus('Backend unavailable. Start Go API on :8080.')
-      return
-    }
-
-    const data = (await response.json()) as WorkspaceNote[]
-    setNotes(data)
-
-    if (data.length === 0) {
-      const seed = await createStarterNote()
-      setNotes([seed])
-      setActiveNote(seed)
-      setDraft(seed.content)
-      setStatus('Created your first note. Start writing.')
-      await navigate({ search: { note: seed.id } })
-      return
-    }
-
-    const initialId = resolveNoteIDFromSearch(data, search) || data[0]?.id
-    if (initialId) {
-      await openNote(initialId)
-    }
-  }
-
   async function openNote(noteID: string) {
-    const response = await fetch(`/api/notes/${noteID}`)
-    if (!response.ok) {
+    try {
+      const note = (await queryClient.fetchQuery(
+        noteByIdQueryOptions(noteID),
+      )) as WorkspaceNote
+      setActiveNote(note)
+      setDraft(note.content)
+      setStatus(`Editing ${note.title}`)
+    } catch {
       setStatus('Could not open that note.')
-      return
     }
-
-    const note = (await response.json()) as WorkspaceNote
-    setActiveNote(note)
-    setDraft(note.content)
-    setStatus(`Editing ${note.title}`)
   }
 
   async function persistNote(
@@ -374,17 +416,31 @@ export function useWorkspaceRoute({
       return updatedNote || { ...current, content }
     })
 
-    setNotes((current) =>
-      current.map((note) =>
-        note.id === noteID
-          ? updatedNote || {
-              ...note,
+    queryClient.setQueryData(
+      noteByIdQueryOptions(noteID).queryKey,
+      (current: WorkspaceNote | undefined) => {
+        if (!current) {
+          return (
+            updatedNote || {
+              id: noteID,
+              title: noteTitle,
               content,
+              links: [],
               updatedAt: new Date().toISOString(),
             }
-          : note,
-      ),
+          )
+        }
+
+        return (
+          updatedNote || {
+            ...current,
+            content,
+            updatedAt: new Date().toISOString(),
+          }
+        )
+      },
     )
+    await queryClient.invalidateQueries({ queryKey: ['notes'] })
 
     setIsAutoSaving(false)
 
@@ -409,7 +465,7 @@ export function useWorkspaceRoute({
     }
 
     await openNote(activeNote.id)
-    await loadNotes()
+    await queryClient.invalidateQueries({ queryKey: ['notes'] })
   }
 
   function exportPreviewToPDF() {
@@ -432,9 +488,70 @@ export function useWorkspaceRoute({
     const nextID = createNoteID()
     const content = `# ${baseName}\n\nStart here.`
     await upsertNote(nextID, content)
-    await loadNotes()
+    await queryClient.invalidateQueries({ queryKey: ['notes'] })
     await navigate({ search: { note: nextID } })
     setStatus('New note created.')
+  }
+
+  async function createFolder() {
+    const folderName = window.prompt('Folder name')?.trim()
+    if (!folderName) {
+      return
+    }
+
+    const response = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: folderName }),
+    })
+
+    if (!response.ok) {
+      setStatus('Could not create folder.')
+      return
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ['folders'] })
+    setStatus(`Folder ${folderName} created.`)
+  }
+
+  async function moveNoteToFolder(noteID: string, folderID: string) {
+    try {
+      const note = (await queryClient.fetchQuery(
+        noteByIdQueryOptions(noteID),
+      )) as WorkspaceNote
+
+      const response = await fetch(`/api/notes/${noteID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: note.title,
+          content: note.content,
+          folderId: folderID,
+        }),
+      })
+
+      if (!response.ok) {
+        setStatus('Could not move note.')
+        return
+      }
+
+      queryClient.setQueryData(
+        noteByIdQueryOptions(noteID).queryKey,
+        (current: WorkspaceNote | undefined) =>
+          current ? { ...current, folderId: folderID } : current,
+      )
+      await queryClient.invalidateQueries({ queryKey: ['notes'] })
+
+      if (activeNote?.id === noteID) {
+        setActiveNote((current) =>
+          current ? { ...current, folderId: folderID } : current,
+        )
+      }
+
+      setStatus(`Moved ${note.title} to folder.`)
+    } catch {
+      setStatus('Could not move note.')
+    }
   }
 
   async function createStarterNote() {

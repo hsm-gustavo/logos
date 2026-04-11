@@ -4,8 +4,11 @@ import {
   type WorkspaceSearch,
   useWorkspaceRoute,
 } from '../lib/useWorkspaceRoute'
+import { notesListQueryOptions } from '../lib/notesQueries'
 
 export const Route = createFileRoute('/')({
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData(notesListQueryOptions()),
   validateSearch: (search: Record<string, unknown>): WorkspaceSearch => ({
     note: typeof search.note === 'string' ? search.note : undefined,
     noteTitle:

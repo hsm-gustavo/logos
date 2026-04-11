@@ -105,7 +105,15 @@ export function SearchModal({
           {query.trim() === '' ? (
             <p className="status-line">Start typing to search your notes.</p>
           ) : isLoading ? (
-            <p className="status-line">Searching...</p>
+            <div className="search-skeleton-list" aria-label="Searching notes">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="search-skeleton-row"
+                  data-testid="search-skeleton-row"
+                />
+              ))}
+            </div>
           ) : error ? (
             <p className="status-line">{error}</p>
           ) : results.length === 0 ? (

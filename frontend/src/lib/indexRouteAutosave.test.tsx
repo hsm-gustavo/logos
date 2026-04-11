@@ -8,6 +8,7 @@ import {
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getRouter } from '../router'
+import { useUIStore } from './uiStore'
 
 const reactToPrintMocks = vi.hoisted(() => ({
   useReactToPrint: vi.fn(),
@@ -63,6 +64,18 @@ describe('index route autosave', () => {
   beforeEach(() => {
     vi.useRealTimers()
     window.history.replaceState({}, '', '/')
+    useUIStore.setState({
+      status: 'Loading notes...',
+      workspaceSidebar: null,
+      sidebarSectionsExpanded: {},
+      workspaceSearch: {
+        isOpen: false,
+        query: '',
+        isLoading: false,
+        error: null,
+        results: [],
+      },
+    })
 
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -470,6 +483,179 @@ describe('index route autosave', () => {
       expect(
         screen.getByText('Print dialog opened. Choose Save as PDF.'),
       ).toBeTruthy()
+    })
+  })
+
+  it('renders folders tree with expandable sections in sidebar', async () => {
+    const noteInFolder = {
+      id: 'n1',
+      title: 'Algebra',
+      content: '# Algebra\n\nBody',
+      links: [],
+      folderId: 'math',
+      updatedAt: new Date().toISOString(),
+    }
+
+    const unfiledNote = {
+      id: 'n2',
+      title: 'Physics',
+      content: '# Physics\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([noteInFolder, unfiledNote])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(noteInFolder)
+        }
+
+        if (url === '/api/notes/n2' && method === 'GET') {
+          return jsonResponse(unfiledNote)
+        }
+
+        if (url === '/api/folders' && method === 'GET') {
+          return jsonResponse([
+            {
+              id: 'math',
+              name: 'Math',
+              updatedAt: new Date().toISOString(),
+            },
+          ])
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText(/Algebra/)
+    await screen.findByText(/Physics/)
+
+    const mathToggle = screen.getByRole('button', {
+      name: 'Toggle Math section',
+    })
+
+    fireEvent.click(mathToggle)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Algebra/ })).toBeNull()
+    })
+  })
+
+  it('moves a note into a folder by drag and drop', async () => {
+    const noteInFolder = {
+      id: 'n1',
+      title: 'Algebra',
+      content: '# Algebra\n\nBody',
+      links: [],
+      folderId: 'math',
+      updatedAt: new Date().toISOString(),
+    }
+
+    const noteToMove = {
+      id: 'n2',
+      title: 'Physics',
+      content: '# Physics\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    let notesState = [noteInFolder, noteToMove]
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse(notesState)
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(noteInFolder)
+        }
+
+        if (url === '/api/notes/n2' && method === 'GET') {
+          return jsonResponse(notesState[1])
+        }
+
+        if (url === '/api/folders' && method === 'GET') {
+          return jsonResponse([
+            {
+              id: 'math',
+              name: 'Math',
+              updatedAt: new Date().toISOString(),
+            },
+          ])
+        }
+
+        if (url === '/api/notes/n2' && method === 'PUT') {
+          const payload = JSON.parse(String(init?.body ?? '{}')) as {
+            folderId?: string
+          }
+
+          notesState = [
+            noteInFolder,
+            { ...noteToMove, folderId: payload.folderId },
+          ]
+          return new Response(null, { status: 204 })
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByRole('button', { name: /Algebra/ })
+    await screen.findByRole('button', { name: /Physics/ })
+
+    const noteButton = screen.getByRole('button', { name: /Physics/ })
+    const mathSection = screen.getByRole('button', {
+      name: 'Toggle Math section',
+    }).parentElement as HTMLElement
+    const dataTransfer = {
+      store: new Map<string, string>(),
+      setData(type: string, value: string) {
+        this.store.set(type, value)
+      },
+      getData(type: string) {
+        return this.store.get(type) ?? ''
+      },
+      effectAllowed: 'move',
+    }
+
+    fireEvent.dragStart(noteButton, { dataTransfer })
+    fireEvent.drop(mathSection, { dataTransfer })
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url) === '/api/notes/n2' &&
+            init?.method === 'PUT' &&
+            String(init?.body).includes('"folderId":"math"'),
+        ),
+      ).toBe(true)
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /Physics/ })).toHaveLength(1)
     })
   })
 })

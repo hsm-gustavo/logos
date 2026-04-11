@@ -1,4 +1,9 @@
-import { Outlet, createRootRoute, useRouterState } from '@tanstack/react-router'
+import {
+  Outlet,
+  createRootRouteWithContext,
+  useRouterState,
+} from '@tanstack/react-router'
+import type { QueryClient } from '@tanstack/react-query'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import Sidebar from '../components/Sidebar'
@@ -8,7 +13,11 @@ import { useUIStore } from '../lib/uiStore'
 import '../styles.css'
 import { ThemeProvider } from '#/components/ThemeProvider'
 
-export const Route = createRootRoute({
+type RouterContext = {
+  queryClient: QueryClient
+}
+
+export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootComponent,
 })
 
@@ -33,13 +42,17 @@ function RootComponent() {
         >
           {workspaceSidebar && (
             <Sidebar
-              notes={workspaceSidebar.notes}
+              sections={workspaceSidebar.sections}
               selectedId={workspaceSidebar.selectedId}
               collapsed={workspaceSidebar.collapsed}
               canCreate={workspaceSidebar.canCreate}
+              canCreateFolder={workspaceSidebar.canCreateFolder}
               statusText={workspaceSidebar.statusText}
               onCreate={workspaceSidebar.onCreate}
+              onCreateFolder={workspaceSidebar.onCreateFolder}
               onSelect={workspaceSidebar.onSelect}
+              onMoveNoteToFolder={workspaceSidebar.onMoveNoteToFolder}
+              onToggleSection={workspaceSidebar.onToggleSection}
               onToggleCollapse={workspaceSidebar.onToggleCollapse}
               onSearch={workspaceSidebar.onSearch}
               onConfig={workspaceSidebar.onConfig}
