@@ -10,6 +10,16 @@ import { createWikiCompletionSource } from './wikiCompletion'
 import { livePreviewStateField } from './livePreviewExtension'
 import { useUIStore } from './uiStore'
 
+export type WorkspaceSearchResult = {
+  note: {
+    id: string
+    title: string
+    state?: string
+  }
+  score: number
+  matchSource: 'title' | 'content' | 'both'
+}
+
 export type WorkspaceNote = {
   id: string
   title: string
@@ -38,8 +48,15 @@ type WorkspaceRouteState = {
   editorExtensions: Extension[]
   exportPreviewToPDF: () => void
   isAutoSaving: boolean
+  isSearchLoading: boolean
+  isSearchOpen: boolean
   isReadOnly: boolean
   previewContainerRef: RefObject<HTMLDivElement | null>
+  searchError: string | null
+  searchQuery: string
+  searchResults: WorkspaceSearchResult[]
+  setIsSearchOpen: (value: boolean) => void
+  setSearchQuery: (value: string) => void
   saveCurrentNote: () => Promise<void>
   setDraft: (value: string) => void
   setIsReadOnly: (value: boolean | ((current: boolean) => boolean)) => void
@@ -61,7 +78,12 @@ export function useWorkspaceRoute({
   const clearWorkspaceSidebar = useUIStore(
     (state) => state.clearWorkspaceSidebar,
   )
+  const workspaceSearch = useUIStore((state) => state.workspaceSearch)
+  const setWorkspaceSearch = useUIStore((state) => state.setWorkspaceSearch)
+  const clearWorkspaceSearch = useUIStore((state) => state.clearWorkspaceSearch)
   const autoSaveRunnerRef = useRef(createDebouncedRunner(500))
+  const searchDebounceRef = useRef<number | null>(null)
+  const searchAbortRef = useRef<AbortController | null>(null)
   const previewContainerRef = useRef<HTMLDivElement | null>(null)
 
   const printPreview = useReactToPrint({
@@ -127,8 +149,96 @@ export function useWorkspaceRoute({
   useEffect(() => {
     return () => {
       autoSaveRunnerRef.current.cancel()
+      if (searchDebounceRef.current) {
+        window.clearTimeout(searchDebounceRef.current)
+      }
+      searchAbortRef.current?.abort()
+      clearWorkspaceSearch()
     }
-  }, [])
+  }, [clearWorkspaceSearch])
+
+  useEffect(() => {
+    const trimmedQuery = workspaceSearch.query.trim()
+
+    if (!workspaceSearch.isOpen) {
+      return
+    }
+
+    if (trimmedQuery === '') {
+      setWorkspaceSearch((current) => ({
+        ...current,
+        results: [],
+        error: null,
+        isLoading: false,
+      }))
+      searchAbortRef.current?.abort()
+      if (searchDebounceRef.current) {
+        window.clearTimeout(searchDebounceRef.current)
+        searchDebounceRef.current = null
+      }
+      return
+    }
+
+    if (searchDebounceRef.current) {
+      window.clearTimeout(searchDebounceRef.current)
+    }
+
+    searchDebounceRef.current = window.setTimeout(() => {
+      searchAbortRef.current?.abort()
+      const controller = new AbortController()
+      searchAbortRef.current = controller
+      setWorkspaceSearch((current) => ({
+        ...current,
+        isLoading: true,
+        error: null,
+      }))
+
+      void (async () => {
+        try {
+          const response = await fetch(
+            `/api/search?q=${encodeURIComponent(trimmedQuery)}`,
+            { signal: controller.signal },
+          )
+
+          if (!response.ok) {
+            setWorkspaceSearch((current) => ({
+              ...current,
+              error: 'Could not search notes.',
+              results: [],
+            }))
+            return
+          }
+
+          const data = (await response.json()) as WorkspaceSearchResult[]
+          setWorkspaceSearch((current) => ({
+            ...current,
+            results: data,
+          }))
+        } catch (error) {
+          if (error instanceof Error && error.name === 'AbortError') {
+            return
+          }
+          setWorkspaceSearch((current) => ({
+            ...current,
+            error: 'Could not search notes.',
+            results: [],
+          }))
+        } finally {
+          setWorkspaceSearch((current) => ({
+            ...current,
+            isLoading: false,
+          }))
+        }
+      })()
+    }, 300)
+
+    return () => {
+      if (searchDebounceRef.current) {
+        window.clearTimeout(searchDebounceRef.current)
+        searchDebounceRef.current = null
+      }
+    }
+  }, [setWorkspaceSearch, workspaceSearch.isOpen, workspaceSearch.query])
 
   useEffect(() => {
     if (!activeNote || isReadOnly) {
@@ -162,7 +272,13 @@ export function useWorkspaceRoute({
         })()
       },
       onToggleCollapse: () => setIsSidebarCollapsed((current) => !current),
-      onSearch: () => setStatus('Search is coming soon.'),
+      onSearch: () => {
+        setWorkspaceSearch((current) => ({
+          ...current,
+          isOpen: true,
+        }))
+        setStatus('Search open.')
+      },
       onConfig: () => setStatus('Sidebar settings are coming soon.'),
     })
 
@@ -371,6 +487,24 @@ func greet() string {
     isAutoSaving,
     isReadOnly,
     previewContainerRef,
+    searchError: workspaceSearch.error,
+    searchQuery: workspaceSearch.query,
+    searchResults: workspaceSearch.results,
+    isSearchOpen: workspaceSearch.isOpen,
+    isSearchLoading: workspaceSearch.isLoading,
+    setIsSearchOpen: (value: boolean) =>
+      setWorkspaceSearch((current) => ({
+        ...current,
+        isOpen: value,
+        ...(value
+          ? {}
+          : { query: '', results: [], error: null, isLoading: false }),
+      })),
+    setSearchQuery: (value: string) =>
+      setWorkspaceSearch((current) => ({
+        ...current,
+        query: value,
+      })),
     saveCurrentNote,
     setDraft,
     setIsReadOnly,

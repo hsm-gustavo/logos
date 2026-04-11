@@ -115,6 +115,51 @@ a {
     0 14px 30px rgba(13, 22, 38, 0.1);
 }
 
+.search-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: start center;
+  padding: 6rem 1rem 1rem;
+  background: rgba(12, 18, 29, 0.36);
+}
+
+.search-modal {
+  width: min(700px, 100%);
+  border-radius: 0.8rem;
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.search-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.search-modal-input {
+  width: 100%;
+  border: 1px solid var(--chip-line);
+  border-radius: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  color: var(--sea-ink);
+  background: color-mix(in oklab, var(--chip-bg) 70%, white 30%);
+}
+
+.search-modal-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.search-modal-results {
+  max-height: min(52dvh, 460px);
+  overflow: auto;
+}
+
 .workspace-sidebar {
   width: var(--sidebar-width);
   height: 100dvh;

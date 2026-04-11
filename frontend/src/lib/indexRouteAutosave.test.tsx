@@ -62,6 +62,7 @@ describe('index route autosave', () => {
 
   beforeEach(() => {
     vi.useRealTimers()
+    window.history.replaceState({}, '', '/')
 
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -120,6 +121,7 @@ describe('index route autosave', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const router = getRouter()
+    await router.navigate({ to: '/' })
     render(<RouterProvider router={router} />)
 
     const editor = await screen.findByTestId('cm-mock')
@@ -174,6 +176,7 @@ describe('index route autosave', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const router = getRouter()
+    await router.navigate({ to: '/' })
     render(<RouterProvider router={router} />)
 
     await screen.findByText('Note 1')
@@ -188,7 +191,7 @@ describe('index route autosave', () => {
     ).toBeTruthy()
   })
 
-  it('renders sidebar outside editor shell and updates status from sidebar actions', async () => {
+  it('opens search modal from sidebar and focuses input', async () => {
     const note = {
       id: 'n1',
       title: 'Note 1',
@@ -226,7 +229,17 @@ describe('index route autosave', () => {
     expect(editorShell.contains(sidebar)).toBe(false)
 
     fireEvent.click(screen.getByRole('button', { name: 'Search notes' }))
-    expect(screen.getByText('Search is coming soon.')).toBeTruthy()
+
+    const dialog = screen.getByRole('dialog', { name: 'Search notes' })
+    expect(dialog).toBeTruthy()
+    const input = screen.getByLabelText('Search notes input')
+    expect(document.activeElement).toBe(input)
+
+    fireEvent.click(dialog)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Search notes' })).toBeNull()
+    })
   })
 
   it('hides workspace sidebar on About route', async () => {
@@ -265,6 +278,153 @@ describe('index route autosave', () => {
 
     await screen.findByText('About Logos')
     expect(screen.queryByTestId('workspace-sidebar')).toBeNull()
+  })
+
+  it('debounces search requests and skips API for empty query', async () => {
+    const note = {
+      id: 'n1',
+      title: 'Calculus 1',
+      content: '# Calculus 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([note])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(note)
+        }
+
+        if (url.includes('/api/search?q=calc') && method === 'GET') {
+          return jsonResponse([
+            {
+              note,
+              score: 12,
+              matchSource: 'title',
+            },
+          ])
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText('Calculus 1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search notes' }))
+    const input = screen.getByLabelText('Search notes input')
+
+    fireEvent.change(input, { target: { value: 'calc' } })
+
+    await new Promise((resolve) => setTimeout(resolve, 120))
+
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/api/search')),
+    ).toBe(false)
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).includes('/api/search?q=calc'),
+        ),
+      ).toBe(true)
+    })
+
+    fireEvent.change(input, { target: { value: '   ' } })
+    await new Promise((resolve) => setTimeout(resolve, 420))
+
+    const searchCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes('/api/search'),
+    )
+
+    expect(searchCalls).toHaveLength(1)
+  })
+
+  it('opens note from search result within workspace and closes modal', async () => {
+    const noteA = {
+      id: 'n1',
+      title: 'Calculus 1',
+      content: '# Calculus 1\n\nBody',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const noteB = {
+      id: 'n2',
+      title: 'Linear Algebra',
+      content: '# Linear Algebra\n\nVectors',
+      links: [],
+      updatedAt: new Date().toISOString(),
+    }
+
+    const fetchMock = vi
+      .fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation(async (input, init) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+
+        if (url === '/api/notes' && method === 'GET') {
+          return jsonResponse([noteA, noteB])
+        }
+
+        if (url === '/api/notes/n1' && method === 'GET') {
+          return jsonResponse(noteA)
+        }
+
+        if (url === '/api/notes/n2' && method === 'GET') {
+          return jsonResponse(noteB)
+        }
+
+        if (url.includes('/api/search?q=algebra') && method === 'GET') {
+          return jsonResponse([
+            {
+              note: noteB,
+              score: 9,
+              matchSource: 'title',
+            },
+          ])
+        }
+
+        return new Response(null, { status: 404 })
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const router = getRouter()
+    render(<RouterProvider router={router} />)
+
+    await screen.findByText('Calculus 1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search notes' }))
+    const input = screen.getByLabelText('Search notes input')
+    fireEvent.change(input, { target: { value: 'algebra' } })
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).includes('/api/search?q=algebra'),
+        ),
+      ).toBe(true)
+    })
+
+    const result = await screen.findByRole('link', { name: /Linear Algebra/i })
+    fireEvent.click(result)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Search notes' })).toBeNull()
+      expect(screen.getByText('Editing Linear Algebra')).toBeTruthy()
+    })
   })
 
   it('exports read-only preview to PDF via react-to-print', async () => {

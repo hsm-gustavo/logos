@@ -2,6 +2,7 @@ import { Outlet, createRootRoute, useRouterState } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import Sidebar from '../components/Sidebar'
+import { SearchModal } from '../components/search/SearchModal'
 import { useUIStore } from '../lib/uiStore'
 
 import '../styles.css'
@@ -16,6 +17,8 @@ function RootComponent() {
     select: (state) => state.location.pathname,
   })
   const workspaceSidebar = useUIStore((state) => state.workspaceSidebar)
+  const workspaceSearch = useUIStore((state) => state.workspaceSearch)
+  const setWorkspaceSearch = useUIStore((state) => state.setWorkspaceSearch)
   const isWorkspaceRoute = pathname === '/'
 
   return (
@@ -49,6 +52,39 @@ function RootComponent() {
       ) : (
         <Outlet />
       )}
+      <SearchModal
+        isOpen={workspaceSearch.isOpen}
+        query={workspaceSearch.query}
+        isLoading={workspaceSearch.isLoading}
+        error={workspaceSearch.error}
+        results={workspaceSearch.results}
+        onClose={() =>
+          setWorkspaceSearch((current) => ({
+            ...current,
+            isOpen: false,
+            query: '',
+            results: [],
+            error: null,
+            isLoading: false,
+          }))
+        }
+        onQueryChange={(value) =>
+          setWorkspaceSearch((current) => ({
+            ...current,
+            query: value,
+          }))
+        }
+        onResultSelect={() =>
+          setWorkspaceSearch((current) => ({
+            ...current,
+            isOpen: false,
+            query: '',
+            results: [],
+            error: null,
+            isLoading: false,
+          }))
+        }
+      />
       <TanStackDevtools
         config={{
           position: 'bottom-right',

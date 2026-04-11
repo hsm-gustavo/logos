@@ -19,12 +19,39 @@ type WorkspaceSidebarState = {
   onConfig?: () => void
 }
 
+type SearchResultNote = {
+  id: string
+  title: string
+  state?: string
+}
+
+type SearchResultItem = {
+  note: SearchResultNote
+  score: number
+  matchSource: 'title' | 'content' | 'both'
+}
+
+type WorkspaceSearchState = {
+  isOpen: boolean
+  query: string
+  isLoading: boolean
+  error: string | null
+  results: SearchResultItem[]
+}
+
 type UIState = {
   status: string
   setStatus: (status: string) => void
   workspaceSidebar: WorkspaceSidebarState | null
   setWorkspaceSidebar: (sidebar: WorkspaceSidebarState) => void
   clearWorkspaceSidebar: () => void
+  workspaceSearch: WorkspaceSearchState
+  setWorkspaceSearch: (
+    search:
+      | WorkspaceSearchState
+      | ((current: WorkspaceSearchState) => WorkspaceSearchState),
+  ) => void
+  clearWorkspaceSearch: () => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -33,4 +60,28 @@ export const useUIStore = create<UIState>((set) => ({
   workspaceSidebar: null,
   setWorkspaceSidebar: (workspaceSidebar) => set({ workspaceSidebar }),
   clearWorkspaceSidebar: () => set({ workspaceSidebar: null }),
+  workspaceSearch: {
+    isOpen: false,
+    query: '',
+    isLoading: false,
+    error: null,
+    results: [],
+  },
+  setWorkspaceSearch: (workspaceSearch) =>
+    set((state) => ({
+      workspaceSearch:
+        typeof workspaceSearch === 'function'
+          ? workspaceSearch(state.workspaceSearch)
+          : workspaceSearch,
+    })),
+  clearWorkspaceSearch: () =>
+    set({
+      workspaceSearch: {
+        isOpen: false,
+        query: '',
+        isLoading: false,
+        error: null,
+        results: [],
+      },
+    }),
 }))
