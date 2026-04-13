@@ -1,14 +1,24 @@
 import { RouterProvider } from '@tanstack/react-router'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
 } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getRouter } from '../router'
 import { useUIStore } from './uiStore'
+
+type DragEndHandler = (result: {
+  draggableId: string
+  source: { droppableId: string; index: number }
+  destination: { droppableId: string; index: number } | null
+}) => void
+
+let lastDragEndHandler: DragEndHandler | null = null
 
 const reactToPrintMocks = vi.hoisted(() => ({
   useReactToPrint: vi.fn(),
@@ -46,6 +56,64 @@ vi.mock('react-to-print', () => ({
   },
 }))
 
+vi.mock('@hello-pangea/dnd', () => ({
+  DragDropContext: ({
+    children,
+    onDragEnd,
+  }: {
+    children: ReactNode
+    onDragEnd: DragEndHandler
+  }) => {
+    lastDragEndHandler = onDragEnd
+    return <div data-testid="dnd-context">{children}</div>
+  },
+  Droppable: ({
+    children,
+    droppableId,
+  }: {
+    children: (
+      provided: {
+        innerRef: (el: HTMLElement | null) => void
+        droppableProps: Record<string, unknown>
+        placeholder: ReactNode
+      },
+      snapshot: { isDraggingOver: boolean },
+    ) => ReactNode
+    droppableId: string
+  }) =>
+    children(
+      {
+        innerRef: () => {},
+        droppableProps: { 'data-droppable-id': droppableId },
+        placeholder: null,
+      },
+      { isDraggingOver: false },
+    ),
+  Draggable: ({
+    children,
+    draggableId,
+  }: {
+    children: (
+      provided: {
+        innerRef: (el: HTMLElement | null) => void
+        draggableProps: Record<string, unknown>
+        dragHandleProps: Record<string, unknown>
+      },
+      snapshot: { isDragging: boolean },
+    ) => ReactNode
+    draggableId: string
+    index: number
+  }) =>
+    children(
+      {
+        innerRef: () => {},
+        draggableProps: { 'data-draggable-id': draggableId },
+        dragHandleProps: {},
+      },
+      { isDragging: false },
+    ),
+}))
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -59,6 +127,7 @@ describe('index route autosave', () => {
     vi.unstubAllGlobals()
     reactToPrintMocks.useReactToPrint.mockReset()
     reactToPrintMocks.print.mockReset()
+    lastDragEndHandler = null
   })
 
   beforeEach(() => {
@@ -540,8 +609,8 @@ describe('index route autosave', () => {
     const router = getRouter()
     render(<RouterProvider router={router} />)
 
-    await screen.findByText(/Algebra/)
-    await screen.findByText(/Physics/)
+    await screen.findByRole('button', { name: /Algebra/ })
+    await screen.findByRole('button', { name: /Physics/ })
 
     const mathToggle = screen.getByRole('button', {
       name: 'Toggle Math section',
@@ -569,6 +638,7 @@ describe('index route autosave', () => {
       title: 'Physics',
       content: '# Physics\n\nBody',
       links: [],
+      folderId: undefined as string | undefined,
       updatedAt: new Date().toISOString(),
     }
 
@@ -625,23 +695,13 @@ describe('index route autosave', () => {
     await screen.findByRole('button', { name: /Algebra/ })
     await screen.findByRole('button', { name: /Physics/ })
 
-    const noteButton = screen.getByRole('button', { name: /Physics/ })
-    const mathSection = screen.getByRole('button', {
-      name: 'Toggle Math section',
-    }).parentElement as HTMLElement
-    const dataTransfer = {
-      store: new Map<string, string>(),
-      setData(type: string, value: string) {
-        this.store.set(type, value)
-      },
-      getData(type: string) {
-        return this.store.get(type) ?? ''
-      },
-      effectAllowed: 'move',
-    }
-
-    fireEvent.dragStart(noteButton, { dataTransfer })
-    fireEvent.drop(mathSection, { dataTransfer })
+    act(() => {
+      lastDragEndHandler?.({
+        draggableId: 'n2',
+        source: { droppableId: 'unfiled', index: 0 },
+        destination: { droppableId: 'folder-math', index: 0 },
+      })
+    })
 
     await waitFor(() => {
       expect(

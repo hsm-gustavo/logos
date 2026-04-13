@@ -270,6 +270,12 @@ a {
     color-mix(in oklab, var(--accent) 30%, transparent);
 }
 
+.sidebar-section-droppable-active {
+  background: color-mix(in oklab, var(--accent-soft) 28%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--accent) 42%, transparent);
+}
+
 .sidebar-section-toggle {
   align-self: flex-start;
   border: 0;

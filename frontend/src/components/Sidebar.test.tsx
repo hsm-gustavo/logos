@@ -1,6 +1,78 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Sidebar from './Sidebar'
+
+type DragEndHandler = (result: {
+  draggableId: string
+  source: { droppableId: string; index: number }
+  destination: { droppableId: string; index: number } | null
+}) => void
+
+let lastDragEndHandler: DragEndHandler | null = null
+const draggableInteractiveFlags: boolean[] = []
+
+vi.mock('@hello-pangea/dnd', () => ({
+  DragDropContext: ({
+    children,
+    onDragEnd,
+  }: {
+    children: ReactNode
+    onDragEnd: DragEndHandler
+  }) => {
+    lastDragEndHandler = onDragEnd
+    return <div data-testid="dnd-context">{children}</div>
+  },
+  Droppable: ({
+    children,
+    droppableId,
+  }: {
+    children: (
+      provided: {
+        innerRef: (el: HTMLElement | null) => void
+        droppableProps: Record<string, unknown>
+        placeholder: ReactNode
+      },
+      snapshot: { isDraggingOver: boolean },
+    ) => ReactNode
+    droppableId: string
+  }) =>
+    children(
+      {
+        innerRef: () => {},
+        droppableProps: { 'data-droppable-id': droppableId },
+        placeholder: null,
+      },
+      { isDraggingOver: false },
+    ),
+  Draggable: ({
+    children,
+    draggableId,
+    disableInteractiveElementBlocking,
+  }: {
+    children: (
+      provided: {
+        innerRef: (el: HTMLElement | null) => void
+        draggableProps: Record<string, unknown>
+        dragHandleProps: Record<string, unknown>
+      },
+      snapshot: { isDragging: boolean },
+    ) => ReactNode
+    draggableId: string
+    index: number
+    disableInteractiveElementBlocking?: boolean
+  }) => (
+    draggableInteractiveFlags.push(Boolean(disableInteractiveElementBlocking)),
+    children(
+      {
+        innerRef: () => {},
+        draggableProps: { 'data-draggable-id': draggableId },
+        dragHandleProps: {},
+      },
+      { isDragging: false },
+    )
+  ),
+}))
 
 vi.mock('./ThemeToggle', () => ({
   default: () => <button type="button">Theme</button>,
@@ -9,6 +81,8 @@ vi.mock('./ThemeToggle', () => ({
 describe('Sidebar', () => {
   afterEach(() => {
     cleanup()
+    lastDragEndHandler = null
+    draggableInteractiveFlags.length = 0
   })
 
   it('uses a presentation-only contract and emits UI events', () => {
@@ -128,18 +202,9 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('button', { name: 'Folder' })).toBeNull()
   })
 
-  it('calls folder drop handler when a note is dropped on a section', () => {
+  it('calls folder drop handler when a note is dropped on a folder section', () => {
     const onMoveNoteToFolder =
       vi.fn<(noteId: string, folderId: string) => void>()
-    const dataTransfer = {
-      store: new Map<string, string>(),
-      setData(type: string, value: string) {
-        this.store.set(type, value)
-      },
-      getData(type: string) {
-        return this.store.get(type) ?? ''
-      },
-    }
 
     render(
       <Sidebar
@@ -167,14 +232,36 @@ describe('Sidebar', () => {
       />,
     )
 
-    const section = screen.getByRole('button', { name: 'Toggle Math section' })
-      .parentElement as HTMLElement
-
-    fireEvent.dragStart(screen.getByRole('button', { name: /Calculus/ }), {
-      dataTransfer,
+    act(() => {
+      lastDragEndHandler?.({
+        draggableId: 'n1',
+        source: { droppableId: 'unfiled', index: 0 },
+        destination: { droppableId: 'folder-math', index: 0 },
+      })
     })
-    fireEvent.drop(section, { dataTransfer })
 
     expect(onMoveNoteToFolder).toHaveBeenCalledWith('n1', 'math')
+  })
+
+  it('allows dragging notes from interactive note buttons', () => {
+    render(
+      <Sidebar
+        sections={[
+          {
+            id: 'unfiled',
+            label: 'Unfiled',
+            kind: 'unfiled',
+            expanded: true,
+            notes: [{ id: 'n1', title: 'Calculus', linksCount: 3 }],
+          },
+        ]}
+        collapsed={false}
+        onSelect={() => {}}
+        onToggleSection={() => {}}
+        onToggleCollapse={() => {}}
+      />,
+    )
+
+    expect(draggableInteractiveFlags).toContain(true)
   })
 })

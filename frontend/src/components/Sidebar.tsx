@@ -3,7 +3,12 @@ import { BsGear } from 'react-icons/bs'
 import { GoSidebarCollapse } from 'react-icons/go'
 import { GoSidebarExpand } from 'react-icons/go'
 import { FaPlus } from 'react-icons/fa6'
-import type { DragEvent } from 'react'
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DropResult,
+} from '@hello-pangea/dnd'
 import ThemeToggle from './ThemeToggle'
 
 export type SidebarNote = {
@@ -53,23 +58,22 @@ export default function Sidebar({
   onSearch,
   onConfig,
 }: SidebarProps) {
-  function handleSectionDrop(
-    event: DragEvent<HTMLDivElement>,
-    sectionId: string,
-  ) {
-    event.preventDefault()
-
-    const noteId = event.dataTransfer.getData('text/plain')
-    if (!noteId || !onMoveNoteToFolder || !sectionId.startsWith('folder-')) {
+  function handleDragEnd(result: DropResult) {
+    const destinationSectionId = result.destination?.droppableId
+    if (
+      !destinationSectionId ||
+      !onMoveNoteToFolder ||
+      !destinationSectionId.startsWith('folder-')
+    ) {
       return
     }
 
-    const folderId = sectionId.replace(/^folder-/, '')
+    const folderId = destinationSectionId.replace(/^folder-/, '')
     if (!folderId) {
       return
     }
 
-    onMoveNoteToFolder(noteId, folderId)
+    onMoveNoteToFolder(result.draggableId, folderId)
   }
 
   return (
@@ -154,54 +158,70 @@ export default function Sidebar({
       {/* content */}
       <section className="sidebar-content">
         {!collapsed ? (
-          <>
+          <DragDropContext onDragEnd={handleDragEnd}>
             <p className="status-line">{statusText}</p>
             {sections.map((section) => (
-              <div
-                key={section.id}
-                className={`sidebar-section ${section.kind === 'folder' ? 'sidebar-section-droppable' : ''}`}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => handleSectionDrop(event, section.id)}
-              >
-                <button
-                  type="button"
-                  className="sidebar-section-toggle"
-                  aria-label={`Toggle ${section.label} section`}
-                  onClick={() => onToggleSection(section.id)}
-                >
-                  <span aria-hidden="true">{section.expanded ? '▾' : '▸'}</span>{' '}
-                  {section.label}
-                </button>
-                {section.expanded && (
-                  <ul className="note-list">
-                    {section.notes.map((note) => (
-                      <li key={note.id}>
-                        <button
-                          type="button"
-                          draggable
-                          className={
-                            note.id === selectedId
-                              ? 'note-item note-item-active'
-                              : 'note-item'
-                          }
-                          onClick={() => onSelect(note.id)}
-                          onDragStart={(event) => {
-                            event.dataTransfer.setData('text/plain', note.id)
-                            event.dataTransfer.effectAllowed = 'move'
-                          }}
-                        >
-                          <span className="note-item-title">{note.title}</span>
-                          <span className="note-item-meta">
-                            {note.linksCount} links
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+              <Droppable key={section.id} droppableId={section.id}>
+                {(dropProvided, dropSnapshot) => (
+                  <div
+                    ref={dropProvided.innerRef}
+                    {...dropProvided.droppableProps}
+                    className={`sidebar-section ${section.kind === 'folder' ? 'sidebar-section-droppable' : ''} ${dropSnapshot.isDraggingOver && section.kind === 'folder' ? 'sidebar-section-droppable-active' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="sidebar-section-toggle"
+                      aria-label={`Toggle ${section.label} section`}
+                      onClick={() => onToggleSection(section.id)}
+                    >
+                      <span aria-hidden="true">
+                        {section.expanded ? '▾' : '▸'}
+                      </span>{' '}
+                      {section.label}
+                    </button>
+                    {section.expanded && (
+                      <ul className="note-list">
+                        {section.notes.map((note, index) => (
+                          <Draggable
+                            key={note.id}
+                            draggableId={note.id}
+                            index={index}
+                            disableInteractiveElementBlocking
+                          >
+                            {(dragProvided) => (
+                              <li
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                {...dragProvided.dragHandleProps}
+                              >
+                                <button
+                                  type="button"
+                                  className={
+                                    note.id === selectedId
+                                      ? 'note-item note-item-active'
+                                      : 'note-item'
+                                  }
+                                  onClick={() => onSelect(note.id)}
+                                >
+                                  <span className="note-item-title">
+                                    {note.title}
+                                  </span>
+                                  <span className="note-item-meta">
+                                    {note.linksCount} links
+                                  </span>
+                                </button>
+                              </li>
+                            )}
+                          </Draggable>
+                        ))}
+                        {dropProvided.placeholder}
+                      </ul>
+                    )}
+                  </div>
                 )}
-              </div>
+              </Droppable>
             ))}
-          </>
+          </DragDropContext>
         ) : (
           <div className="sidebar-content-spacer" aria-hidden="true" />
         )}
