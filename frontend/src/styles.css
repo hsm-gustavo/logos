@@ -253,8 +253,13 @@ a {
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 0.8rem;
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.sidebar-section + .sidebar-section {
+  border-top: 1px solid color-mix(in oklab, var(--line) 75%, transparent);
+  padding-top: 0.5rem;
 }
 
 .sidebar-section-droppable {
@@ -271,9 +276,31 @@ a {
 }
 
 .sidebar-section-droppable-active {
-  background: color-mix(in oklab, var(--accent-soft) 28%, transparent);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in oklab, var(--accent) 42%, transparent);
+  background: color-mix(in oklab, var(--accent-soft) 36%, transparent);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in oklab, var(--accent) 58%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--paper) 75%, transparent);
+  animation: sidebar-drop-pulse 650ms ease-in-out infinite alternate;
+}
+
+.sidebar-note-dragging .note-item {
+  border-color: color-mix(in oklab, var(--accent) 78%, var(--line));
+  background: color-mix(in oklab, var(--accent-soft) 58%, var(--chip-bg));
+  box-shadow: 0 9px 18px rgba(13, 22, 38, 0.16);
+  transform: rotate(-1deg) scale(1.01);
+}
+
+@keyframes sidebar-drop-pulse {
+  from {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--accent) 44%, transparent),
+      0 0 0 0 color-mix(in oklab, var(--accent-soft) 28%, transparent);
+  }
+  to {
+    box-shadow:
+      inset 0 0 0 2px color-mix(in oklab, var(--accent) 64%, transparent),
+      0 0 0 4px color-mix(in oklab, var(--accent-soft) 35%, transparent);
+  }
 }
 
 .sidebar-section-toggle {
@@ -282,13 +309,28 @@ a {
   background: transparent;
   color: var(--sea-ink-soft);
   font-family: var(--font-sans);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   line-height: 1;
   padding: 0;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.sidebar-section-toggle-folder {
+  color: var(--sea-ink);
+  font-size: 0.66rem;
+}
+
+.sidebar-section-toggle-unfiled {
+  font-size: 0.6rem;
+  color: color-mix(in oklab, var(--sea-ink-soft) 92%, var(--sea-ink) 8%);
+}
+
+.sidebar-section-toggle-archived {
+  font-size: 0.58rem;
+  color: color-mix(in oklab, var(--sea-ink-soft) 88%, transparent);
 }
 
 .sidebar-section-toggle:hover {

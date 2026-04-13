@@ -11,6 +11,7 @@ type DragEndHandler = (result: {
 
 let lastDragEndHandler: DragEndHandler | null = null
 const draggableInteractiveFlags: boolean[] = []
+let draggableIsDragging = false
 
 vi.mock('@hello-pangea/dnd', () => ({
   DragDropContext: ({
@@ -69,7 +70,7 @@ vi.mock('@hello-pangea/dnd', () => ({
         draggableProps: { 'data-draggable-id': draggableId },
         dragHandleProps: {},
       },
-      { isDragging: false },
+      { isDragging: draggableIsDragging },
     )
   ),
 }))
@@ -83,6 +84,7 @@ describe('Sidebar', () => {
     cleanup()
     lastDragEndHandler = null
     draggableInteractiveFlags.length = 0
+    draggableIsDragging = false
   })
 
   it('uses a presentation-only contract and emits UI events', () => {
@@ -263,5 +265,32 @@ describe('Sidebar', () => {
     )
 
     expect(draggableInteractiveFlags).toContain(true)
+  })
+
+  it('applies dragging style while note is being dragged', () => {
+    draggableIsDragging = true
+
+    render(
+      <Sidebar
+        sections={[
+          {
+            id: 'unfiled',
+            label: 'Unfiled',
+            kind: 'unfiled',
+            expanded: true,
+            notes: [{ id: 'n1', title: 'Calculus', linksCount: 3 }],
+          },
+        ]}
+        collapsed={false}
+        onSelect={() => {}}
+        onToggleSection={() => {}}
+        onToggleCollapse={() => {}}
+      />,
+    )
+
+    const noteButton = screen.getByRole('button', { name: /Calculus/ })
+    expect(noteButton.closest('li')?.className).toContain(
+      'sidebar-note-dragging',
+    )
   })
 })

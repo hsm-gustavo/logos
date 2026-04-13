@@ -3,6 +3,7 @@ import { BsGear } from 'react-icons/bs'
 import { GoSidebarCollapse } from 'react-icons/go'
 import { GoSidebarExpand } from 'react-icons/go'
 import { FaPlus } from 'react-icons/fa6'
+import { FaRegFolder } from 'react-icons/fa6'
 import {
   DragDropContext,
   Draggable,
@@ -149,7 +150,7 @@ export default function Sidebar({
               type="button"
               onClick={onCreateFolder}
             >
-              <FaPlus size={'15px'} /> Folder
+              <FaRegFolder size={'15px'} /> Folder
             </button>
           )}
         </div>
@@ -170,7 +171,7 @@ export default function Sidebar({
                   >
                     <button
                       type="button"
-                      className="sidebar-section-toggle"
+                      className={`sidebar-section-toggle sidebar-section-toggle-${section.kind}`}
                       aria-label={`Toggle ${section.label} section`}
                       onClick={() => onToggleSection(section.id)}
                     >
@@ -188,11 +189,16 @@ export default function Sidebar({
                             index={index}
                             disableInteractiveElementBlocking
                           >
-                            {(dragProvided) => (
+                            {(dragProvided, dragSnapshot) => (
                               <li
                                 ref={dragProvided.innerRef}
                                 {...dragProvided.draggableProps}
                                 {...dragProvided.dragHandleProps}
+                                className={
+                                  dragSnapshot.isDragging
+                                    ? 'sidebar-note-dragging'
+                                    : undefined
+                                }
                               >
                                 <button
                                   type="button"
